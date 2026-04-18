@@ -13,10 +13,7 @@ import { incidentCommand } from './commands/incident';
 
 // Events
 import { handleAttendanceInteraction } from './events/attendanceInteraction';
-import {
-  handleIncidentButtonInteraction,
-  handleIncidentDefenceButtonInteraction,
-} from './events/incidentButtonInteraction';
+import { handleIncidentButtonInteraction } from './events/incidentButtonInteraction';
 import { handleDefenceMessage, handleDefenceDoneInteraction } from './events/defenceInteraction';
 
 // Services
