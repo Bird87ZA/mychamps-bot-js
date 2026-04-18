@@ -1,0 +1,106 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String
+  discordId String   @map("discord_id")
+  isAdmin   Boolean  @default(false) @map("is_admin")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([username])
+  @@index([discordId])
+  @@map("users")
+}
+
+model Command {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("commands")
+}
+
+model Schedule {
+  id             Int       @id @default(autoincrement())
+  guildId        BigInt    @map("guild_id")
+  channelId      BigInt    @map("channel_id")
+  messageId      BigInt?   @map("message_id") @db.UnsignedBigInt
+  guildName      String    @map("guild_name")
+  date           DateTime
+  dateUtc        DateTime  @map("date_utc")
+  closingDate    DateTime? @map("closing_date")
+  closingDateUtc DateTime? @map("closing_date_utc")
+  name           String
+  image          String?
+  timeBefore     String    @default("-6") @map("time_before")
+  botPosted      Boolean   @default(false) @map("bot_posted")
+  attendees      Json      @default("{}") @db.Json
+  closed         Boolean   @default(false)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@map("schedule")
+}
+
+model Attendance {
+  id          Int      @id @default(autoincrement())
+  guildId     BigInt   @map("guild_id")
+  channelId   BigInt   @map("channel_id")
+  fullTime    BigInt   @map("full_time")
+  reserve     BigInt?
+  commentator BigInt?
+  attendees   Json     @default("{}") @db.Json
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([guildId])
+  @@index([channelId])
+  @@map("attendance")
+}
+
+model Setting {
+  id        Int      @id @default(autoincrement())
+  guildId   String   @map("guild_id")
+  key       String
+  value     String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+model Reminder {
+  id         Int      @id @default(autoincrement())
+  scheduleId String   @map("schedule_id")
+  remindAt   DateTime @map("remind_at")
+  reminded   Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("reminders")
+}
+
+model Randomiser {
+  id        Int      @id @default(autoincrement())
+  guildId   BigInt   @map("guild_id")
+  channelId BigInt   @map("channel_id")
+  options   Json     @db.Json
+  repick    Boolean  @default(false)
+  frequency Int      @default(1)
+  repeat    Int      @default(1)
+  postAt    DateTime @map("post_at")
+  message   String   @default("{{ result }}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("randomisers")
+}

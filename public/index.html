@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MyChamps Bot Dashboard</title>
+  <style>
+    :root {
+      --bg: #1a1a2e;
+      --surface: #16213e;
+      --surface-hover: #1a2745;
+      --border: #2a3a5c;
+      --text: #e0e0e0;
+      --text-muted: #8899aa;
+      --accent: #5865f2;
+      --accent-hover: #4752c4;
+      --danger: #ed4245;
+      --danger-hover: #c03537;
+      --success: #57f287;
+      --warning: #fee75c;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    header h1 {
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .stats {
+      display: flex;
+      gap: 12px;
+      margin-left: auto;
+    }
+
+    .stat {
+      background: var(--bg);
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      border: 1px solid var(--border);
+    }
+
+    .stat strong {
+      color: var(--accent);
+    }
+
+    nav {
+      display: flex;
+      gap: 4px;
+      padding: 12px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+
+    nav button {
+      background: transparent;
+      color: var(--text-muted);
+      border: none;
+      padding: 8px 18px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+
+    nav button:hover {
+      background: var(--surface-hover);
+      color: var(--text);
+    }
+
+    nav button.active {
+      background: var(--accent);
+      color: white;
+    }
+
+    main {
+      padding: 24px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .section { display: none; }
+    .section.active { display: block; }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .section-header h2 {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .badge {
+      background: var(--border);
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    th {
+      text-align: left;
+      padding: 10px 14px;
+      font-size: 12px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      background: var(--bg);
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    td {
+      padding: 10px 14px;
+      font-size: 13px;
+      border-top: 1px solid var(--border);
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    tr:hover td {
+      background: var(--surface-hover);
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .pill-open { background: rgba(87, 242, 135, 0.15); color: var(--success); }
+    .pill-closed { background: rgba(237, 66, 69, 0.15); color: var(--danger); }
+    .pill-posted { background: rgba(88, 101, 242, 0.15); color: var(--accent); }
+    .pill-pending { background: rgba(254, 231, 92, 0.15); color: var(--warning); }
+    .pill-true { background: rgba(87, 242, 135, 0.15); color: var(--success); }
+    .pill-false { background: rgba(237, 66, 69, 0.15); color: var(--danger); }
+
+    .btn {
+      padding: 5px 12px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+
+    .btn-danger {
+      background: var(--danger);
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: var(--danger-hover);
+    }
+
+    .btn-sm {
+      padding: 3px 8px;
+      font-size: 11px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .attendees-preview {
+      max-width: 300px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .empty {
+      text-align: center;
+      padding: 48px;
+      color: var(--text-muted);
+    }
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      max-width: 600px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .modal h3 {
+      margin-bottom: 16px;
+      font-size: 16px;
+    }
+
+    .modal pre {
+      background: var(--bg);
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .modal .close {
+      float: right;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 20px;
+      cursor: pointer;
+    }
+
+    .refreshing {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>MyChamps Bot</h1>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <nav id="nav">
+    <button class="active" data-tab="schedules">Schedules</button>
+    <button data-tab="reminders">Reminders</button>
+    <button data-tab="attendance">Attendance</button>
+    <button data-tab="randomisers">Randomisers</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+
+  <main>
+    <section id="schedules-section" class="section active">
+      <div class="section-header">
+        <h2>Schedules <span class="badge" id="schedules-count">0</span></h2>
+      </div>
+      <div id="schedules-table"></div>
+    </section>
+
+    <section id="reminders-section" class="section">
+      <div class="section-header">
+        <h2>Reminders <span class="badge" id="reminders-count">0</span></h2>
+      </div>
+      <div id="reminders-table"></div>
+    </section>
+
+    <section id="attendance-section" class="section">
+      <div class="section-header">
+        <h2>Attendance Configs <span class="badge" id="attendance-count">0</span></h2>
+      </div>
+      <div id="attendance-table"></div>
+    </section>
+
+    <section id="randomisers-section" class="section">
+      <div class="section-header">
+        <h2>Randomisers <span class="badge" id="randomisers-count">0</span></h2>
+      </div>
+      <div id="randomisers-table"></div>
+    </section>
+
+    <section id="settings-section" class="section">
+      <div class="section-header">
+        <h2>Settings <span class="badge" id="settings-count">0</span></h2>
+      </div>
+      <div id="settings-table"></div>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <button class="close" onclick="closeModal()">&times;</button>
+      <h3 id="modal-title"></h3>
+      <pre id="modal-body"></pre>
+    </div>
+  </div>
+
+  <script>
+    // ─── Tab navigation ──────────────────────────────────────────────────────
+    document.querySelectorAll('#nav button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#nav button').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.tab + '-section').classList.add('active');
+      });
+    });
+
+    // ─── Helpers ─────────────────────────────────────────────────────────────
+    function fmt(dateStr) {
+      if (!dateStr) return '-';
+      const d = new Date(dateStr);
+      return d.toLocaleString('en-ZA', { dateStyle: 'short', timeStyle: 'short' });
+    }
+
+    function pill(val, trueLabel, falseLabel) {
+      if (val) return `<span class="pill pill-true">${trueLabel || 'Yes'}</span>`;
+      return `<span class="pill pill-false">${falseLabel || 'No'}</span>`;
+    }
+
+    function statusPill(schedule) {
+      if (schedule.closed) return '<span class="pill pill-closed">Closed</span>';
+      const now = new Date();
+      if (schedule.closingDateUtc && new Date(schedule.closingDateUtc) < now) return '<span class="pill pill-closed">Closed</span>';
+      if (new Date(schedule.dateUtc) < now) return '<span class="pill pill-closed">Past</span>';
+      if (schedule.botPosted) return '<span class="pill pill-posted">Posted</span>';
+      return '<span class="pill pill-open">Upcoming</span>';
+    }
+
+    function attendeeSummary(attendees) {
+      if (!attendees || typeof attendees !== 'object') return '-';
+      const parts = [];
+      for (const [role, members] of Object.entries(attendees)) {
+        const count = Object.keys(members).length;
+        if (count > 0) parts.push(`${role}: ${count}`);
+      }
+      return parts.length > 0 ? parts.join(', ') : 'No responses';
+    }
+
+    async function api(path, options = {}) {
+      const res = await fetch('/api' + path, {
+        headers: { 'Content-Type': 'application/json' },
+        ...options,
+      });
+      return res.json();
+    }
+
+    function showModal(title, data) {
+      document.getElementById('modal-title').textContent = title;
+      document.getElementById('modal-body').textContent = JSON.stringify(data, null, 2);
+      document.getElementById('modal').classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.remove('active');
+    }
+
+    document.getElementById('modal').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeModal();
+    });
+
+    // ─── Data loading ────────────────────────────────────────────────────────
+    async function loadStats() {
+      const stats = await api('/stats');
+      document.getElementById('stats').innerHTML = `
+        <div class="stat">Schedules: <strong>${stats.schedules}</strong></div>
+        <div class="stat">Reminders: <strong>${stats.reminders}</strong></div>
+        <div class="stat">Attendance: <strong>${stats.attendance}</strong></div>
+        <div class="stat">Randomisers: <strong>${stats.randomisers}</strong></div>
+      `;
+    }
+
+    async function loadSchedules() {
+      const data = await api('/schedules');
+      document.getElementById('schedules-count').textContent = data.length;
+
+      if (data.length === 0) {
+        document.getElementById('schedules-table').innerHTML = '<div class="empty">No schedules found.</div>';
+        return;
+      }
+
+      document.getElementById('schedules-table').innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Guild</th>
+              <th>Name</th>
+              <th>Date</th>
+              <th>Closing</th>
+              <th>Status</th>
+              <th>Attendees</th>
+              <th>Reminders</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.map(s => `
+              <tr>
+                <td>${s.id}</td>
+                <td>${s.guildName}</td>
+                <td><strong>${esc(s.name)}</strong></td>
+                <td>${fmt(s.date)}</td>
+                <td>${fmt(s.closingDate)}</td>
+                <td>${statusPill(s)}</td>
+                <td class="attendees-preview">${attendeeSummary(s.attendees)}</td>
+                <td>${s.reminderCount ?? 0}</td>
+                <td class="actions">
+                  <button class="btn btn-sm" style="background:var(--accent);color:white" onclick='showModal("Schedule #${s.id}", ${JSON.stringify(s).replace(/'/g, "&#39;")})'>View</button>
+                  ${!s.closed ? `<button class="btn btn-sm btn-danger" onclick="closeSchedule(${s.id})">Close</button>` : ''}
+                  <button class="btn btn-sm btn-danger" onclick="deleteSchedule(${s.id})">Delete</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function loadReminders() {
+      const data = await api('/reminders');
+      document.getElementById('reminders-count').textContent = data.length;
+
+      if (data.length === 0) {
+        document.getElementById('reminders-table').innerHTML = '<div class="empty">No reminders found.</div>';
+        return;
+      }
+
+      document.getElementById('reminders-table').innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Schedule</th>
+              <th>Guild</th>
+              <th>Remind At</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.map(r => `
+              <tr>
+                <td>${r.id}</td>
+                <td>${r.schedule ? esc(r.schedule.name) : r.scheduleId}</td>
+                <td>${r.schedule ? esc(r.schedule.guildName) : '-'}</td>
+                <td>${fmt(r.remindAt)}</td>
+                <td>${new Date(r.remindAt) < new Date()
+                  ? '<span class="pill pill-pending">Due</span>'
+                  : '<span class="pill pill-open">Pending</span>'}</td>
+                <td class="actions">
+                  <button class="btn btn-sm btn-danger" onclick="deleteReminder(${r.id})">Delete</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function loadAttendance() {
+      const data = await api('/attendance');
+      document.getElementById('attendance-count').textContent = data.length;
+
+      if (data.length === 0) {
+        document.getElementById('attendance-table').innerHTML = '<div class="empty">No attendance configs found.</div>';
+        return;
+      }
+
+      document.getElementById('attendance-table').innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Guild ID</th>
+              <th>Channel ID</th>
+              <th>Full-Time Role</th>
+              <th>Reserve Role</th>
+              <th>Commentator Role</th>
+              <th>Teams</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.map(a => `
+              <tr>
+                <td>${a.id}</td>
+                <td>${a.guildId}</td>
+                <td>${a.channelId}</td>
+                <td>${a.fullTime}</td>
+                <td>${a.reserve || '-'}</td>
+                <td>${a.commentator || '-'}</td>
+                <td class="attendees-preview">${attendeeSummary(a.attendees)}</td>
+                <td class="actions">
+                  <button class="btn btn-sm" style="background:var(--accent);color:white" onclick='showModal("Attendance #${a.id}", ${JSON.stringify(a).replace(/'/g, "&#39;")})'>View</button>
+                  <button class="btn btn-sm btn-danger" onclick="deleteAttendance(${a.id})">Delete</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function loadRandomisers() {
+      const data = await api('/randomisers');
+      document.getElementById('randomisers-count').textContent = data.length;
+
+      if (data.length === 0) {
+        document.getElementById('randomisers-table').innerHTML = '<div class="empty">No randomisers found.</div>';
+        return;
+      }
+
+      document.getElementById('randomisers-table').innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Guild ID</th>
+              <th>Options</th>
+              <th>Repick</th>
+              <th>Frequency</th>
+              <th>Repeats Left</th>
+              <th>Next Post</th>
+              <th>Message</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.map(r => `
+              <tr>
+                <td>${r.id}</td>
+                <td>${r.guildId}</td>
+                <td class="attendees-preview" title="${esc(r.options)}">${esc(r.options)}</td>
+                <td>${pill(r.repick)}</td>
+                <td>${r.frequency}d</td>
+                <td>${r.repeat}</td>
+                <td>${fmt(r.postAt)}</td>
+                <td class="attendees-preview">${esc(r.message)}</td>
+                <td class="actions">
+                  <button class="btn btn-sm btn-danger" onclick="deleteRandomiser(${r.id})">Delete</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function loadSettings() {
+      const data = await api('/settings');
+      document.getElementById('settings-count').textContent = data.length;
+
+      if (data.length === 0) {
+        document.getElementById('settings-table').innerHTML = '<div class="empty">No settings found.</div>';
+        return;
+      }
+
+      // Group by guild
+      const grouped = {};
+      data.forEach(s => {
+        if (!grouped[s.guildId]) grouped[s.guildId] = [];
+        grouped[s.guildId].push(s);
+      });
+
+      document.getElementById('settings-table').innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Guild ID</th>
+              <th>Key</th>
+              <th>Value</th>
+              <th>Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.map(s => `
+              <tr>
+                <td>${s.guildId}</td>
+                <td><strong>${esc(s.key)}</strong></td>
+                <td>${esc(s.value)}</td>
+                <td>${fmt(s.updatedAt)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    // ─── Actions ─────────────────────────────────────────────────────────────
+    async function deleteSchedule(id) {
+      if (!confirm('Delete this schedule and all its reminders?')) return;
+      await api(`/schedules/${id}`, { method: 'DELETE' });
+      loadAll();
+    }
+
+    async function closeSchedule(id) {
+      if (!confirm('Close this schedule?')) return;
+      await api(`/schedules/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ closed: true }),
+      });
+      loadAll();
+    }
+
+    async function deleteReminder(id) {
+      if (!confirm('Delete this reminder?')) return;
+      await api(`/reminders/${id}`, { method: 'DELETE' });
+      loadAll();
+    }
+
+    async function deleteAttendance(id) {
+      if (!confirm('Delete this attendance configuration?')) return;
+      await api(`/attendance/${id}`, { method: 'DELETE' });
+      loadAll();
+    }
+
+    async function deleteRandomiser(id) {
+      if (!confirm('Delete this randomiser?')) return;
+      await api(`/randomisers/${id}`, { method: 'DELETE' });
+      loadAll();
+    }
+
+    // ─── Escape HTML ─────────────────────────────────────────────────────────
+    function esc(str) {
+      if (str == null) return '';
+      const div = document.createElement('div');
+      div.textContent = String(str);
+      return div.innerHTML;
+    }
+
+    // ─── Init ────────────────────────────────────────────────────────────────
+    function loadAll() {
+      loadStats();
+      loadSchedules();
+      loadReminders();
+      loadAttendance();
+      loadRandomisers();
+      loadSettings();
+    }
+
+    loadAll();
+
+    // Auto-refresh every 30 seconds
+    setInterval(loadAll, 30000);
+  </script>
+</body>
+</html>

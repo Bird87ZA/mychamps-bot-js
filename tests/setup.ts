@@ -1,0 +1,48 @@
+import { vi } from 'vitest';
+
+// Mock the database module globally
+vi.mock('../src/database', () => ({
+  prisma: {
+    setting: {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      upsert: vi.fn(),
+      update: vi.fn(),
+      count: vi.fn(),
+    },
+    schedule: {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
+      count: vi.fn(),
+    },
+    attendance: {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
+      count: vi.fn(),
+    },
+    reminder: {
+      findMany: vi.fn(),
+      createMany: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
+      groupBy: vi.fn(),
+      count: vi.fn(),
+    },
+    randomiser: {
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      count: vi.fn(),
+    },
+    $queryRaw: vi.fn(),
+    $disconnect: vi.fn(),
+  },
+}));

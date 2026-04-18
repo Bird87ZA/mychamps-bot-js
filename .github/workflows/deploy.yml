@@ -1,0 +1,39 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [master]
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'master'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Install SSH key
+        uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Deploy code
+        run: rsync -avz -e 'ssh -o "StrictHostKeyChecking=no"' --exclude='.git/' --exclude='node_modules/' --exclude='dist/' --exclude='.env' ./ ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}:/var/www/mychamps-bot-js
+
+      - name: Build and restart
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /var/www/mychamps-bot-js
+
+            docker compose build app
+            docker compose up -d app
+            docker exec mychampsbot-js-app npx prisma migrate deploy
