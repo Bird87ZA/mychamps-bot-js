@@ -9,15 +9,22 @@ import { attendanceCommand } from './commands/attendance';
 import { settingsCommand } from './commands/settings';
 import { randomiserCommand } from './commands/randomiser';
 import { helpCommand } from './commands/help';
+import { incidentCommand } from './commands/incident';
 
 // Events
 import { handleAttendanceInteraction } from './events/attendanceInteraction';
+import {
+  handleIncidentButtonInteraction,
+  handleIncidentDefenceButtonInteraction,
+} from './events/incidentButtonInteraction';
+import { handleDefenceMessage, handleDefenceDoneInteraction } from './events/defenceInteraction';
 
 // Services
 import { scheduleCheckerService } from './services/scheduleChecker';
 import { botCloserService } from './services/botCloser';
 import { remindAttendeesService } from './services/remindAttendees';
 import { randomiserService } from './services/randomiser';
+import { incidentReminderService } from './services/incidentReminder';
 
 // Dashboard
 import { startDashboard } from './dashboard/server';
@@ -27,6 +34,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
   ],
 });
 
@@ -38,12 +46,13 @@ const commandList: BotCommand[] = [
   settingsCommand,
   randomiserCommand,
   helpCommand,
+  incidentCommand,
 ];
 for (const command of commandList) {
   commands.set(command.data.name, command);
 }
 
-// Handle slash commands
+// Handle slash commands and interactions
 client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isChatInputCommand()) {
     const command = commands.get(interaction.commandName);
@@ -62,10 +71,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   }
 
-  // Handle button interactions (attendance)
+  // Handle button interactions
   if (interaction.isButton()) {
-    await handleAttendanceInteraction(interaction, client);
+    if (interaction.customId.startsWith('incident_report!')) {
+      await handleIncidentButtonInteraction(interaction, client);
+    } else if (
+      interaction.customId.startsWith('defence_done_yes!') ||
+      interaction.customId.startsWith('defence_done_no!')
+    ) {
+      await handleDefenceDoneInteraction(interaction, client);
+    } else {
+      await handleAttendanceInteraction(interaction, client);
+    }
   }
+});
+
+// Handle messages for defence flow
+client.on(Events.MessageCreate, async (message) => {
+  await handleDefenceMessage(message, client).catch((err) => {
+    console.error('[DefenceMessage] Error:', err);
+  });
 });
 
 // Start background services
@@ -75,6 +100,7 @@ function startServices() {
     botCloserService,
     remindAttendeesService,
     randomiserService,
+    incidentReminderService,
   ];
 
   for (const service of services) {

@@ -5,6 +5,7 @@ export function createMockInteraction(overrides: Record<string, unknown> = {}) {
     guildId: '123456789',
     channelId: '987654321',
     guild: { name: 'Test Guild', iconURL: () => 'https://icon.url' },
+    user: { id: 'user1', username: 'testuser', globalName: 'Test User' },
     member: {
       user: { id: 'user1', username: 'testuser', globalName: 'Test User' },
       nickname: null,
@@ -26,6 +27,7 @@ export function createMockInteraction(overrides: Record<string, unknown> = {}) {
     reply: vi.fn(),
     followUp: vi.fn(),
     update: vi.fn(),
+    editReply: vi.fn(),
     isChatInputCommand: vi.fn(() => true),
     isButton: vi.fn(() => false),
     ...overrides,
@@ -34,6 +36,7 @@ export function createMockInteraction(overrides: Record<string, unknown> = {}) {
 
 export function createMockClient() {
   return {
+    user: { id: 'bot-user-id', username: 'TestBot' },
     guilds: {
       cache: new Map([
         [
