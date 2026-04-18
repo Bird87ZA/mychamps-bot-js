@@ -48,10 +48,7 @@ describe('MyChampsApiClient', () => {
 
       void client.requestLink('a@b.com', 'uid123');
 
-      expect(fetchSpy).toHaveBeenCalledWith(
-        `${BASE_URL}/api/discord/link`,
-        expect.anything(),
-      );
+      expect(fetchSpy).toHaveBeenCalledWith(`${BASE_URL}/api/discord/link`, expect.anything());
     });
   });
 
@@ -137,7 +134,10 @@ describe('MyChampsApiClient', () => {
 
   describe('getChampionships', () => {
     it('makes GET to /api/discord/championships/{discordUserId} with auth header', async () => {
-      const championships = [{ id: 1, name: 'F1 League' }, { id: 2, name: 'GT League' }];
+      const championships = [
+        { id: 1, name: 'F1 League' },
+        { id: 2, name: 'GT League' },
+      ];
       const fetchSpy = mockFetchOk(championships);
       vi.stubGlobal('fetch', fetchSpy);
 
@@ -319,12 +319,14 @@ describe('MyChampsApiClient', () => {
 
       const client = new MyChampsApiClient(BASE_URL, TOKEN);
 
-      await expect(client.createIncident({
-        championship_slug: 'slug',
-        reported_by_discord_id: 'uid',
-        description: '',
-        defendant_driver_ids: [],
-      })).rejects.toThrow('MyChamps API error 422');
+      await expect(
+        client.createIncident({
+          championship_slug: 'slug',
+          reported_by_discord_id: 'uid',
+          description: '',
+          defendant_driver_ids: [],
+        }),
+      ).rejects.toThrow('MyChamps API error 422');
     });
 
     it('throws on 500 Internal Server Error response', async () => {

@@ -109,9 +109,7 @@ export class MyChampsApiClient {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async getCurrentRound(championshipSlug: string): Promise<any> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return this.request<any>(
-      `/api/incidents/championship/${championshipSlug}/current-round`,
-    );
+    return this.request<any>(`/api/incidents/championship/${championshipSlug}/current-round`);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
