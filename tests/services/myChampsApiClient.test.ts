@@ -290,6 +290,74 @@ describe('MyChampsApiClient', () => {
     });
   });
 
+  describe('getManagedStatsLeagues', () => {
+    it('makes GET to /api/discord/stats/leagues/{discordUserId} and returns teams', async () => {
+      const teams = [
+        { id: 1, name: 'League A', slug: 'league-a' },
+        { id: 2, name: 'League B', slug: 'league-b' },
+      ];
+      const fetchSpy = mockFetchOk({ teams });
+      vi.stubGlobal('fetch', fetchSpy);
+
+      const client = new MyChampsApiClient(BASE_URL, TOKEN);
+      const result = await client.getManagedStatsLeagues('discord-uid-1');
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        `${BASE_URL}/api/discord/stats/leagues/discord-uid-1`,
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: `Bearer ${TOKEN}`,
+          }),
+        }),
+      );
+      expect(result).toEqual(teams);
+    });
+  });
+
+  describe('getLinkedStats', () => {
+    it('makes POST to /api/discord/stats with discord user id and team ids', async () => {
+      const stats = {
+        leagues: [
+          {
+            id: 1,
+            name: 'League A',
+            stats: {
+              entries: 2,
+              wins: 1,
+              podiums: 2,
+              poles: 1,
+              dnfs: 0,
+              fastest_laps: 1,
+            },
+          },
+        ],
+        combined: {
+          entries: 2,
+          wins: 1,
+          podiums: 2,
+          poles: 1,
+          dnfs: 0,
+          fastest_laps: 1,
+        },
+      };
+      const fetchSpy = mockFetchOk(stats);
+      vi.stubGlobal('fetch', fetchSpy);
+
+      const client = new MyChampsApiClient(BASE_URL, TOKEN);
+      const result = await client.getLinkedStats('discord-uid-1', [1, 2]);
+
+      expect(fetchSpy).toHaveBeenCalledWith(`${BASE_URL}/api/discord/stats`, {
+        method: 'POST',
+        body: JSON.stringify({ discord_user_id: 'discord-uid-1', team_ids: [1, 2] }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      });
+      expect(result).toEqual(stats);
+    });
+  });
+
   describe('error handling', () => {
     it('throws on 401 Unauthorized response', async () => {
       const fetchSpy = mockFetchError(401, 'Unauthorized', 'Invalid token');

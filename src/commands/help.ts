@@ -20,6 +20,7 @@ const helpSections: Record<string, { title: string; content: string }> = {
       '`/schedule` - Schedule events linked to a channel',
       '`/attendance` - Configure attendance tracking',
       '`/settings` - Manage server settings (timezone, post-time, reminders)',
+      '`/stats` - Show your MyChamps stats for configured leagues',
       '`/randomiser` - Create random selection tools',
       '`/help` - Show this help message',
       '',
@@ -56,10 +57,15 @@ const helpSections: Record<string, { title: string; content: string }> = {
   settings: {
     title: 'Settings Command',
     content: [
-      '`/settings` - Configure server settings',
-      '  - `timezone`: IANA timezone (e.g. Africa/Johannesburg)',
-      '  - `post-time`: Days before event to post attendance bot',
-      '  - `remind-attendees`: Reminder frequency in hours (0 to disable)',
+      '`/settings timezone` - Set the IANA timezone (e.g. Africa/Johannesburg)',
+      '`/settings post-time` - Set days before event to post attendance bot',
+      '`/settings remind-attendees` - Set reminder frequency in hours (0 to disable)',
+      '`/settings incident-category` - Set the category for incident channels',
+      '`/settings steward-role` - Set the steward notification role',
+      '`/settings incident-reminder-interval` - Set incident reminder frequency',
+      '`/settings mychamps-api-url` - Set the MyChamps API base URL',
+      '`/settings mychamps-api-token` - Set the MyChamps API token',
+      '`/settings stats` - Choose the leagues returned by `/stats`',
     ].join('\n'),
   },
   randomiser: {

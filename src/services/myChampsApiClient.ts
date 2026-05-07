@@ -4,6 +4,32 @@ export interface LinkResponse {
   message: string;
 }
 
+export interface StatsLeague {
+  id: number;
+  name: string;
+  slug: string | null;
+}
+
+export interface DriverStats {
+  entries: number;
+  wins: number;
+  podiums: number;
+  poles: number;
+  dnfs: number;
+  fastest_laps: number;
+}
+
+export interface LeagueStats {
+  id: number;
+  name: string;
+  stats: DriverStats;
+}
+
+export interface LinkedStatsResponse {
+  leagues: LeagueStats[];
+  combined: DriverStats;
+}
+
 export interface IncidentData {
   championship_slug: string;
   reported_by_discord_id: string;
@@ -79,6 +105,21 @@ export class MyChampsApiClient {
     return this.request<LinkResponse>('/api/discord/confirm', {
       method: 'POST',
       body: JSON.stringify({ discord_user_id: discordUserId, code }),
+    });
+  }
+
+  async getManagedStatsLeagues(discordUserId: string): Promise<StatsLeague[]> {
+    const response = await this.request<{ teams: StatsLeague[] }>(
+      `/api/discord/stats/leagues/${discordUserId}`,
+    );
+
+    return response.teams;
+  }
+
+  async getLinkedStats(discordUserId: string, teamIds: number[]): Promise<LinkedStatsResponse> {
+    return this.request<LinkedStatsResponse>('/api/discord/stats', {
+      method: 'POST',
+      body: JSON.stringify({ discord_user_id: discordUserId, team_ids: teamIds }),
     });
   }
 
