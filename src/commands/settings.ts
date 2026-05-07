@@ -21,6 +21,25 @@ export const settingsCommand: BotCommand = {
     )
     .addIntegerOption((opt) =>
       opt.setName('remind-attendees').setDescription('Reminder frequency in hours (0 to disable)'),
+    )
+    .addChannelOption((opt) =>
+      opt
+        .setName('incident-category')
+        .setDescription('Discord category channel for incident channels'),
+    )
+    .addRoleOption((opt) =>
+      opt.setName('steward-role').setDescription('Role to tag for steward notifications'),
+    )
+    .addIntegerOption((opt) =>
+      opt
+        .setName('incident-reminder-interval')
+        .setDescription('Hours between incident reminders (default 24)'),
+    )
+    .addStringOption((opt) =>
+      opt.setName('mychamps-api-url').setDescription('Base URL for MyChamps API'),
+    )
+    .addStringOption((opt) =>
+      opt.setName('mychamps-api-token').setDescription('API token for MyChamps'),
     ),
 
   async execute(interaction: ChatInputCommandInteraction, _client: Client) {
@@ -50,6 +69,35 @@ export const settingsCommand: BotCommand = {
       if (remindAttendees !== null) {
         await setSetting(guildId, 'remind-attendees', remindAttendees.toString());
         await rebuildReminders(guildId);
+      }
+
+      const incidentCategory = interaction.options.getChannel('incident-category');
+      if (incidentCategory) {
+        await setSetting(guildId, 'incident-category', incidentCategory.id);
+      }
+
+      const stewardRole = interaction.options.getRole('steward-role');
+      if (stewardRole) {
+        await setSetting(guildId, 'steward-role', stewardRole.id);
+      }
+
+      const incidentReminderInterval = interaction.options.getInteger('incident-reminder-interval');
+      if (incidentReminderInterval !== null) {
+        await setSetting(
+          guildId,
+          'incident-reminder-interval',
+          incidentReminderInterval.toString(),
+        );
+      }
+
+      const myChAmpsApiUrl = interaction.options.getString('mychamps-api-url');
+      if (myChAmpsApiUrl) {
+        await setSetting(guildId, 'mychamps-api-url', myChAmpsApiUrl);
+      }
+
+      const myChAmpsApiToken = interaction.options.getString('mychamps-api-token');
+      if (myChAmpsApiToken) {
+        await setSetting(guildId, 'mychamps-api-token', myChAmpsApiToken);
       }
 
       await ephemeralReply(interaction, 'Settings updated successfully.');

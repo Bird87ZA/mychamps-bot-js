@@ -6,6 +6,7 @@ import { settingsCommand } from './commands/settings';
 import { randomiserCommand } from './commands/randomiser';
 import { helpCommand } from './commands/help';
 import { incidentCommand } from './commands/incident';
+import { linkCommand } from './commands/link';
 
 const commands = [
   scheduleCommand.data.toJSON(),
@@ -14,6 +15,7 @@ const commands = [
   randomiserCommand.data.toJSON(),
   helpCommand.data.toJSON(),
   incidentCommand.data.toJSON(),
+  linkCommand.data.toJSON(),
 ];
 
 const token = process.env.DISCORD_TOKEN;

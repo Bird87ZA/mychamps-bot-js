@@ -22,6 +22,7 @@ export function createMockInteraction(overrides: Record<string, unknown> = {}) {
       getString: vi.fn(),
       getInteger: vi.fn(),
       getBoolean: vi.fn(),
+      getChannel: vi.fn(),
       getRole: vi.fn(),
     },
     reply: vi.fn(),
