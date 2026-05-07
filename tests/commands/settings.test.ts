@@ -1,15 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PermissionFlagsBits } from 'discord.js';
 import { settingsCommand } from '../../src/commands/settings';
 import { createMockInteraction, createMockClient } from '../mocks/discord';
 
 vi.mock('../../src/utils/settings', () => ({
+  getSetting: vi.fn(),
   setSetting: vi.fn(),
 }));
 vi.mock('../../src/utils/reminders', () => ({
   rebuildReminders: vi.fn(),
 }));
+vi.mock('../../src/services/myChampsApiClient', () => ({
+  MyChampsApiClient: {
+    fromGuild: vi.fn(),
+  },
+}));
 
-import { setSetting } from '../../src/utils/settings';
+import { getSetting, setSetting } from '../../src/utils/settings';
+import { MyChampsApiClient } from '../../src/services/myChampsApiClient';
+
+const mockGetSetting = vi.mocked(getSetting);
+const mockFromGuild = vi.mocked(MyChampsApiClient.fromGuild);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -22,11 +33,11 @@ describe('settingsCommand', () => {
 
   it('saves valid timezone', async () => {
     const interaction = createMockInteraction();
+    interaction.options.getSubcommand.mockReturnValue('timezone');
     interaction.options.getString.mockImplementation((name: string) => {
-      if (name === 'timezone') return 'Africa/Johannesburg';
+      if (name === 'value') return 'Africa/Johannesburg';
       return null;
     });
-    interaction.options.getInteger.mockReturnValue(null);
     const client = createMockClient();
 
     await settingsCommand.execute(interaction as never, client as never);
@@ -39,11 +50,11 @@ describe('settingsCommand', () => {
 
   it('rejects invalid timezone', async () => {
     const interaction = createMockInteraction();
+    interaction.options.getSubcommand.mockReturnValue('timezone');
     interaction.options.getString.mockImplementation((name: string) => {
-      if (name === 'timezone') return 'Invalid/Zone';
+      if (name === 'value') return 'Invalid/Zone';
       return null;
     });
-    interaction.options.getInteger.mockReturnValue(null);
     const client = createMockClient();
 
     await settingsCommand.execute(interaction as never, client as never);
@@ -55,11 +66,11 @@ describe('settingsCommand', () => {
 
   it('saves valid post-time', async () => {
     const interaction = createMockInteraction();
-    interaction.options.getString.mockImplementation((name: string) => {
-      if (name === 'post-time') return '3';
+    interaction.options.getSubcommand.mockReturnValue('post-time');
+    interaction.options.getInteger.mockImplementation((name: string) => {
+      if (name === 'days') return 3;
       return null;
     });
-    interaction.options.getInteger.mockReturnValue(null);
     const client = createMockClient();
 
     await settingsCommand.execute(interaction as never, client as never);
@@ -67,28 +78,15 @@ describe('settingsCommand', () => {
     expect(setSetting).toHaveBeenCalledWith('123456789', 'post-time', '3');
   });
 
-  it('rejects non-numeric post-time', async () => {
-    const interaction = createMockInteraction();
-    interaction.options.getString.mockImplementation((name: string) => {
-      if (name === 'post-time') return 'abc';
-      return null;
-    });
-    interaction.options.getInteger.mockReturnValue(null);
-    const client = createMockClient();
-
-    await settingsCommand.execute(interaction as never, client as never);
-
-    expect(interaction.reply).toHaveBeenCalledWith(
-      expect.objectContaining({ content: expect.stringContaining('Invalid post-time') }),
-    );
-  });
-
   it('saves remind-attendees and rebuilds reminders', async () => {
     const { rebuildReminders } = await import('../../src/utils/reminders');
 
     const interaction = createMockInteraction();
-    interaction.options.getString.mockReturnValue(null);
-    interaction.options.getInteger.mockReturnValue(4);
+    interaction.options.getSubcommand.mockReturnValue('remind-attendees');
+    interaction.options.getInteger.mockImplementation((name: string) => {
+      if (name === 'hours') return 4;
+      return null;
+    });
     const client = createMockClient();
 
     await settingsCommand.execute(interaction as never, client as never);
@@ -97,85 +95,54 @@ describe('settingsCommand', () => {
     expect(rebuildReminders).toHaveBeenCalledWith('123456789');
   });
 
-  // ── Issue #2: new incident/API settings ────────────────────────────────────
-
   it('saves incident-category channel id', async () => {
-    const interaction = createMockInteraction({
-      options: {
-        getString: vi.fn().mockReturnValue(null),
-        getInteger: vi.fn().mockReturnValue(null),
-        getChannel: vi.fn().mockImplementation((name: string) => {
-          if (name === 'incident-category') return { id: 'cat-channel-id-111' };
-          return null;
-        }),
-        getRole: vi.fn().mockReturnValue(null),
-      },
+    const interaction = createMockInteraction();
+    interaction.options.getSubcommand.mockReturnValue('incident-category');
+    interaction.options.getChannel.mockImplementation((name: string) => {
+      if (name === 'channel') return { id: 'cat-channel-id-111' };
+      return null;
     });
     const client = createMockClient();
 
     await settingsCommand.execute(interaction as never, client as never);
 
     expect(setSetting).toHaveBeenCalledWith('123456789', 'incident-category', 'cat-channel-id-111');
-    expect(interaction.reply).toHaveBeenCalledWith(
-      expect.objectContaining({ content: 'Settings updated successfully.' }),
-    );
   });
 
   it('saves steward-role role id', async () => {
-    const interaction = createMockInteraction({
-      options: {
-        getString: vi.fn().mockReturnValue(null),
-        getInteger: vi.fn().mockReturnValue(null),
-        getChannel: vi.fn().mockReturnValue(null),
-        getRole: vi.fn().mockImplementation((name: string) => {
-          if (name === 'steward-role') return { id: 'role-id-222' };
-          return null;
-        }),
-      },
+    const interaction = createMockInteraction();
+    interaction.options.getSubcommand.mockReturnValue('steward-role');
+    interaction.options.getRole.mockImplementation((name: string) => {
+      if (name === 'role') return { id: 'role-id-222' };
+      return null;
     });
     const client = createMockClient();
 
     await settingsCommand.execute(interaction as never, client as never);
 
     expect(setSetting).toHaveBeenCalledWith('123456789', 'steward-role', 'role-id-222');
-    expect(interaction.reply).toHaveBeenCalledWith(
-      expect.objectContaining({ content: 'Settings updated successfully.' }),
-    );
   });
 
   it('saves incident-reminder-interval', async () => {
-    const interaction = createMockInteraction({
-      options: {
-        getString: vi.fn().mockReturnValue(null),
-        getInteger: vi.fn().mockImplementation((name: string) => {
-          if (name === 'incident-reminder-interval') return 12;
-          return null;
-        }),
-        getChannel: vi.fn().mockReturnValue(null),
-        getRole: vi.fn().mockReturnValue(null),
-      },
+    const interaction = createMockInteraction();
+    interaction.options.getSubcommand.mockReturnValue('incident-reminder-interval');
+    interaction.options.getInteger.mockImplementation((name: string) => {
+      if (name === 'hours') return 12;
+      return null;
     });
     const client = createMockClient();
 
     await settingsCommand.execute(interaction as never, client as never);
 
     expect(setSetting).toHaveBeenCalledWith('123456789', 'incident-reminder-interval', '12');
-    expect(interaction.reply).toHaveBeenCalledWith(
-      expect.objectContaining({ content: 'Settings updated successfully.' }),
-    );
   });
 
   it('saves mychamps-api-url', async () => {
-    const interaction = createMockInteraction({
-      options: {
-        getString: vi.fn().mockImplementation((name: string) => {
-          if (name === 'mychamps-api-url') return 'https://api.mychamps.example.com';
-          return null;
-        }),
-        getInteger: vi.fn().mockReturnValue(null),
-        getChannel: vi.fn().mockReturnValue(null),
-        getRole: vi.fn().mockReturnValue(null),
-      },
+    const interaction = createMockInteraction();
+    interaction.options.getSubcommand.mockReturnValue('mychamps-api-url');
+    interaction.options.getString.mockImplementation((name: string) => {
+      if (name === 'value') return 'https://api.mychamps.example.com';
+      return null;
     });
     const client = createMockClient();
 
@@ -186,22 +153,14 @@ describe('settingsCommand', () => {
       'mychamps-api-url',
       'https://api.mychamps.example.com',
     );
-    expect(interaction.reply).toHaveBeenCalledWith(
-      expect.objectContaining({ content: 'Settings updated successfully.' }),
-    );
   });
 
   it('saves mychamps-api-token', async () => {
-    const interaction = createMockInteraction({
-      options: {
-        getString: vi.fn().mockImplementation((name: string) => {
-          if (name === 'mychamps-api-token') return 'super-secret-token-abc';
-          return null;
-        }),
-        getInteger: vi.fn().mockReturnValue(null),
-        getChannel: vi.fn().mockReturnValue(null),
-        getRole: vi.fn().mockReturnValue(null),
-      },
+    const interaction = createMockInteraction();
+    interaction.options.getSubcommand.mockReturnValue('mychamps-api-token');
+    interaction.options.getString.mockImplementation((name: string) => {
+      if (name === 'value') return 'super-secret-token-abc';
+      return null;
     });
     const client = createMockClient();
 
@@ -212,60 +171,75 @@ describe('settingsCommand', () => {
       'mychamps-api-token',
       'super-secret-token-abc',
     );
-    expect(interaction.reply).toHaveBeenCalledWith(
-      expect.objectContaining({ content: 'Settings updated successfully.' }),
-    );
-  });
-
-  it('saves multiple new settings in one call', async () => {
-    const interaction = createMockInteraction({
-      options: {
-        getString: vi.fn().mockImplementation((name: string) => {
-          if (name === 'mychamps-api-url') return 'https://api.mychamps.example.com';
-          if (name === 'mychamps-api-token') return 'tok-xyz';
-          return null;
-        }),
-        getInteger: vi.fn().mockImplementation((name: string) => {
-          if (name === 'incident-reminder-interval') return 48;
-          return null;
-        }),
-        getChannel: vi.fn().mockImplementation((name: string) => {
-          if (name === 'incident-category') return { id: 'cat-999' };
-          return null;
-        }),
-        getRole: vi.fn().mockImplementation((name: string) => {
-          if (name === 'steward-role') return { id: 'role-777' };
-          return null;
-        }),
-      },
-    });
-    const client = createMockClient();
-
-    await settingsCommand.execute(interaction as never, client as never);
-
-    expect(setSetting).toHaveBeenCalledWith('123456789', 'incident-category', 'cat-999');
-    expect(setSetting).toHaveBeenCalledWith('123456789', 'steward-role', 'role-777');
-    expect(setSetting).toHaveBeenCalledWith('123456789', 'incident-reminder-interval', '48');
-    expect(setSetting).toHaveBeenCalledWith(
-      '123456789',
-      'mychamps-api-url',
-      'https://api.mychamps.example.com',
-    );
-    expect(setSetting).toHaveBeenCalledWith('123456789', 'mychamps-api-token', 'tok-xyz');
   });
 
   it('handles errors gracefully', async () => {
     const interaction = createMockInteraction();
-    interaction.options.getString.mockImplementation(() => {
+    interaction.options.getSubcommand.mockImplementation(() => {
       throw new Error('Something went wrong');
     });
-    interaction.options.getInteger.mockReturnValue(null);
     const client = createMockClient();
 
     await settingsCommand.execute(interaction as never, client as never);
 
     expect(interaction.reply).toHaveBeenCalledWith(
       expect.objectContaining({ content: 'Something went wrong' }),
+    );
+  });
+
+  it('rejects stats settings for non-admin users', async () => {
+    const interaction = createMockInteraction({
+      memberPermissions: {
+        has: vi.fn().mockReturnValue(false),
+      },
+    });
+    interaction.options.getSubcommand.mockReturnValue('stats');
+    const client = createMockClient();
+
+    await settingsCommand.execute(interaction as never, client as never);
+
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('permissions') }),
+    );
+  });
+
+  it('saves selected stats leagues', async () => {
+    const mockSelectInteraction = {
+      user: { id: 'user1' },
+      values: ['1', '2'],
+      update: vi.fn(),
+    };
+    const interaction = createMockInteraction({
+      memberPermissions: {
+        has: vi.fn((perm) => perm === PermissionFlagsBits.ManageGuild),
+      },
+      channel: {
+        awaitMessageComponent: vi.fn().mockResolvedValue(mockSelectInteraction),
+      },
+      editReply: vi.fn(),
+    });
+    interaction.options.getSubcommand.mockReturnValue('stats');
+    const client = createMockClient();
+    const mockApiClient = {
+      getManagedStatsLeagues: vi.fn().mockResolvedValue([
+        { id: 1, name: 'League A', slug: 'league-a' },
+        { id: 2, name: 'League B', slug: 'league-b' },
+      ]),
+    };
+    mockFromGuild.mockResolvedValue(mockApiClient as never);
+    mockGetSetting.mockResolvedValue('[2]');
+
+    await settingsCommand.execute(interaction as never, client as never);
+
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining('Select the leagues'),
+        components: expect.any(Array),
+      }),
+    );
+    expect(setSetting).toHaveBeenCalledWith('123456789', 'stats-league-ids', '[1,2]');
+    expect(mockSelectInteraction.update).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('2 leagues') }),
     );
   });
 });

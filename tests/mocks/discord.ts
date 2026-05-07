@@ -13,6 +13,9 @@ export function createMockInteraction(overrides: Record<string, unknown> = {}) {
         cache: new Map(),
       },
     },
+    memberPermissions: {
+      has: vi.fn(() => false),
+    },
     message: { id: '111222333' },
     replied: false,
     deferred: false,
@@ -27,6 +30,7 @@ export function createMockInteraction(overrides: Record<string, unknown> = {}) {
     },
     reply: vi.fn(),
     followUp: vi.fn(),
+    deferReply: vi.fn(),
     update: vi.fn(),
     editReply: vi.fn(),
     isChatInputCommand: vi.fn(() => true),

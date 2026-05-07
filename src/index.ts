@@ -11,6 +11,7 @@ import { randomiserCommand } from './commands/randomiser';
 import { helpCommand } from './commands/help';
 import { incidentCommand } from './commands/incident';
 import { linkCommand } from './commands/link';
+import { statsCommand } from './commands/stats';
 
 // Events
 import { handleAttendanceInteraction } from './events/attendanceInteraction';
@@ -46,6 +47,7 @@ const commandList: BotCommand[] = [
   helpCommand,
   incidentCommand,
   linkCommand,
+  statsCommand,
 ];
 for (const command of commandList) {
   commands.set(command.data.name, command);
