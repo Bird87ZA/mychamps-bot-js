@@ -7,7 +7,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "deploy-commands": "tsx src/deploy-commands.ts",
+    "deploy-commands": "node dist/deploy-commands.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
@@ -26,7 +26,8 @@
     "date-fns-tz": "^3.2.0",
     "discord.js": "^14.18.0",
     "dotenv": "^16.5.0",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "prisma": "^6.6.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
@@ -36,7 +37,6 @@
     "@vitest/coverage-v8": "^4.1.4",
     "eslint": "^9.25.0",
     "prettier": "^3.8.2",
-    "prisma": "^6.6.0",
     "supertest": "^7.2.2",
     "tsx": "^4.19.0",
     "typescript": "^5.8.0",
