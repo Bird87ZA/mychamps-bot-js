@@ -39,5 +39,6 @@ const rest = new REST({ version: '10' }).setToken(token);
     console.log('Commands registered successfully.');
   } catch (error) {
     console.error('Failed to register commands:', error);
+    process.exit(1);
   }
 })();

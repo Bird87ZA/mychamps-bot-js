@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE `users` (
+CREATE TABLE IF NOT EXISTS `users` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `username` VARCHAR(191) NOT NULL,
     `discord_id` VARCHAR(191) NOT NULL,
@@ -13,7 +13,7 @@ CREATE TABLE `users` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `commands` (
+CREATE TABLE IF NOT EXISTS `commands` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `name` VARCHAR(191) NOT NULL,
     `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -23,7 +23,7 @@ CREATE TABLE `commands` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `schedule` (
+CREATE TABLE IF NOT EXISTS `schedule` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `guild_id` BIGINT NOT NULL,
     `channel_id` BIGINT NOT NULL,
@@ -46,7 +46,7 @@ CREATE TABLE `schedule` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `attendance` (
+CREATE TABLE IF NOT EXISTS `attendance` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `guild_id` BIGINT NOT NULL,
     `channel_id` BIGINT NOT NULL,
@@ -63,7 +63,7 @@ CREATE TABLE `attendance` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `settings` (
+CREATE TABLE IF NOT EXISTS `settings` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `guild_id` VARCHAR(191) NOT NULL,
     `key` VARCHAR(191) NOT NULL,
@@ -75,7 +75,7 @@ CREATE TABLE `settings` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `reminders` (
+CREATE TABLE IF NOT EXISTS `reminders` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `schedule_id` VARCHAR(191) NOT NULL,
     `remind_at` DATETIME(3) NOT NULL,
@@ -87,7 +87,7 @@ CREATE TABLE `reminders` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `randomisers` (
+CREATE TABLE IF NOT EXISTS `randomisers` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `guild_id` BIGINT NOT NULL,
     `channel_id` BIGINT NOT NULL,
@@ -102,4 +102,3 @@ CREATE TABLE `randomisers` (
 
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
