@@ -171,4 +171,73 @@ describe('handleAdd', () => {
       }),
     );
   });
+
+  it('rejects invalid image URLs', async () => {
+    mockPrisma.setting.findFirst.mockImplementation(async (args: { where: { key: string } }) => {
+      if (args.where.key === 'timezone') {
+        return {
+          id: 1,
+          guildId: '123456789',
+          key: 'timezone',
+          value: 'UTC',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        } as never;
+      }
+      return null as never;
+    });
+
+    const interaction = createMockInteraction();
+    interaction.options.getString.mockImplementation((name: string) => {
+      if (name === 'name') return 'Test Event';
+      if (name === 'date') return '20990601 14:00';
+      if (name === 'image') return 'ftp://example.com/event.png';
+      return null;
+    });
+
+    await handleAdd(interaction as never);
+
+    expect(mockPrisma.schedule.create).not.toHaveBeenCalled();
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: 'The image must be a valid Discord image URL.',
+      }),
+    );
+  });
+
+  it('stores valid image URLs', async () => {
+    mockPrisma.setting.findFirst.mockImplementation(async (args: { where: { key: string } }) => {
+      if (args.where.key === 'timezone') {
+        return {
+          id: 1,
+          guildId: '123456789',
+          key: 'timezone',
+          value: 'UTC',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        } as never;
+      }
+      return null as never;
+    });
+    mockPrisma.schedule.create.mockResolvedValue({} as never);
+    mockPrisma.attendance.findFirst.mockResolvedValue(null);
+
+    const interaction = createMockInteraction();
+    interaction.options.getString.mockImplementation((name: string) => {
+      if (name === 'name') return 'Test Event';
+      if (name === 'date') return '20990601 14:00';
+      if (name === 'image') return ' https://example.com/event.png ';
+      return null;
+    });
+
+    await handleAdd(interaction as never);
+
+    expect(mockPrisma.schedule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          image: 'https://example.com/event.png',
+        }),
+      }),
+    );
+  });
 });

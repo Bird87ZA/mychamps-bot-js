@@ -1,9 +1,26 @@
-import { ChatInputCommandInteraction } from 'discord.js';
+import { ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
 import { prisma } from '../../database';
 import { hasTimezone, getSetting } from '../../utils/settings';
 import { parseDate, convertToUtc } from '../../utils/timezone';
 import { rebuildReminders } from '../../utils/reminders';
 import { ephemeralReply } from '../../utils/reply';
+
+const INVALID_IMAGE_MESSAGE = 'The image must be a valid Discord image URL.';
+
+function normalizeImage(image: string | null): string | null {
+  const trimmedImage = image?.trim();
+  return trimmedImage ? trimmedImage : null;
+}
+
+function isValidDiscordImageUrl(image: string): boolean {
+  try {
+    new EmbedBuilder().setThumbnail(image);
+    const { protocol } = new URL(image);
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
 
 export async function handleAdd(interaction: ChatInputCommandInteraction): Promise<void> {
   const guildId = interaction.guildId!;
@@ -14,7 +31,12 @@ export async function handleAdd(interaction: ChatInputCommandInteraction): Promi
     const name = interaction.options.getString('name', true);
     const dateStr = interaction.options.getString('date', true);
     const closingDateStr = interaction.options.getString('closing-date');
-    const image = interaction.options.getString('image');
+    const image = normalizeImage(interaction.options.getString('image'));
+
+    if (image && !isValidDiscordImageUrl(image)) {
+      await ephemeralReply(interaction, INVALID_IMAGE_MESSAGE);
+      return;
+    }
 
     const date = parseDate(dateStr);
     if (!date) {
