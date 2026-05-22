@@ -21,11 +21,60 @@ export function isScheduleClosed(schedule: Schedule): boolean {
   );
 }
 
+function toAttendees(value: unknown): Attendees {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const attendees: Attendees = {};
+
+  for (const [role, members] of Object.entries(value)) {
+    if (!members || typeof members !== 'object' || Array.isArray(members)) {
+      attendees[role] = {};
+      continue;
+    }
+
+    attendees[role] = {};
+    for (const [memberId, memberName] of Object.entries(members)) {
+      if (typeof memberName === 'string') {
+        attendees[role][memberId] = memberName;
+      }
+    }
+  }
+
+  return attendees;
+}
+
+export function mergeAttendeesWithConfig(
+  scheduleAttendees: unknown,
+  configuredAttendees: unknown,
+): Attendees {
+  const configured = toAttendees(configuredAttendees);
+  const current = toAttendees(scheduleAttendees);
+  const attendees: Attendees = {};
+  const hasCurrentAttendees = Object.keys(current).length > 0;
+
+  for (const [role, members] of Object.entries(configured)) {
+    attendees[role] = hasCurrentAttendees ? { ...(current[role] ?? {}) } : { ...members };
+  }
+
+  for (const [role, members] of Object.entries(current)) {
+    if (!(role in attendees)) {
+      attendees[role] = { ...members };
+    }
+  }
+
+  return attendees;
+}
+
 export async function buildAttendanceMessage(
   schedule: Schedule,
   client: Client,
 ): Promise<MessageCreateOptions & MessageEditOptions> {
   const closed = isScheduleClosed(schedule);
+  const attendance = await prisma.attendance.findFirst({
+    where: { channelId: schedule.channelId },
+  });
 
   const embed = new EmbedBuilder()
     .setAuthor({ name: schedule.guildName })
@@ -46,27 +95,16 @@ export async function buildAttendanceMessage(
   }
   embed.setDescription(description);
 
-  // Get attendees - use schedule's attendees, or fall back to attendance config
-  let attendees = schedule.attendees as Attendees;
-  if (!attendees || Object.keys(attendees).length === 0) {
-    const attendance = await prisma.attendance.findFirst({
-      where: { channelId: schedule.channelId },
-    });
-    if (attendance) {
-      attendees = attendance.attendees as Attendees;
-    }
-  }
+  const attendees = mergeAttendeesWithConfig(schedule.attendees, attendance?.attendees);
 
   // Add fields for each role
-  if (attendees) {
-    for (const [role, members] of Object.entries(attendees)) {
-      const memberNames = Object.values(members);
-      embed.addFields({
-        name: role,
-        value: memberNames.length > 0 ? memberNames.join('\n') : '-',
-        inline: true,
-      });
-    }
+  for (const [role, members] of Object.entries(attendees)) {
+    const memberNames = Object.values(members);
+    embed.addFields({
+      name: role,
+      value: memberNames.length > 0 ? memberNames.join('\n') : '-',
+      inline: true,
+    });
   }
 
   const components: ActionRowBuilder<ButtonBuilder>[] = [];
@@ -74,9 +112,6 @@ export async function buildAttendanceMessage(
 
   if (!closed) {
     // Build role mention content string
-    const attendance = await prisma.attendance.findFirst({
-      where: { channelId: schedule.channelId },
-    });
     if (attendance) {
       const roles = [attendance.fullTime, attendance.reserve, attendance.commentator].filter(
         Boolean,
