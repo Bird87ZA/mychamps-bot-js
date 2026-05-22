@@ -1,7 +1,11 @@
 import { ButtonInteraction, Client, EmbedBuilder, MessageFlags } from 'discord.js';
 import { prisma } from '../database';
 import { Attendees } from '../types';
-import { buildAttendanceMessage, isScheduleClosed } from '../utils/attendance';
+import {
+  buildAttendanceMessage,
+  isScheduleClosed,
+  mergeAttendeesWithConfig,
+} from '../utils/attendance';
 import { helpSections } from '../commands/help';
 
 export async function handleAttendanceInteraction(
@@ -65,7 +69,7 @@ export async function handleAttendanceInteraction(
       ('globalName' in member.user ? (member.user.globalName as string | null) : null) ??
       member.user.username;
 
-    const attendees = (schedule.attendees as Attendees) ?? {};
+    const attendees: Attendees = mergeAttendeesWithConfig(schedule.attendees, attendance.attendees);
 
     if (response === 'yes') {
       // Determine which role category the member belongs to

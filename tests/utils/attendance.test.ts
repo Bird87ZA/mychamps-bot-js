@@ -157,5 +157,42 @@ describe('attendance utils', () => {
       expect(embed.data.fields).toBeDefined();
       expect(embed.data.fields![0].name).toBe('Team X');
     });
+
+    it('keeps configured empty groups when schedule attendance is partial', async () => {
+      const schedule = makeSchedule({
+        attendees: {
+          'Team A': { u1: 'Alice' },
+        },
+      });
+      const client = createMockClient();
+
+      mockPrisma.attendance.findFirst.mockResolvedValue({
+        id: 1,
+        guildId: BigInt(123456789),
+        channelId: BigInt(987654321),
+        fullTime: BigInt(111),
+        reserve: null,
+        commentator: null,
+        attendees: {
+          'Team A': {},
+          'Team B': {},
+          'Not Participating': {},
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const result = await buildAttendanceMessage(
+        schedule,
+        client as unknown as import('discord.js').Client,
+      );
+
+      const embed = result.embeds![0];
+      expect(embed.data.fields).toEqual([
+        expect.objectContaining({ name: 'Team A', value: 'Alice' }),
+        expect.objectContaining({ name: 'Team B', value: '-' }),
+        expect.objectContaining({ name: 'Not Participating', value: '-' }),
+      ]);
+    });
   });
 });
