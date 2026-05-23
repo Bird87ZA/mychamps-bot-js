@@ -88,6 +88,15 @@ describe('handleIncidentButtonInteraction', () => {
     expect(mockShowModal).toHaveBeenCalled();
 
     const modalJson = mockShowModal.mock.calls[0][0].toJSON();
+    const descriptionComponent = modalJson.components.find(
+      (component: { label?: string }) => component.label === 'Description',
+    )?.component;
+    const evidenceUrlComponent = modalJson.components.find(
+      (component: { label?: string }) => component.label === 'Evidence URL',
+    )?.component;
+
+    expect(descriptionComponent).not.toHaveProperty('label');
+    expect(evidenceUrlComponent).not.toHaveProperty('label');
     expect(modalJson.components).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

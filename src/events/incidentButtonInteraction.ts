@@ -68,14 +68,12 @@ export async function handleIncidentButtonInteraction(
 
   const descriptionInput = new TextInputBuilder()
     .setCustomId('description')
-    .setLabel('Description of the incident')
     .setStyle(TextInputStyle.Paragraph)
     .setRequired(true)
     .setMaxLength(1000);
 
   const evidenceUrlInput = new TextInputBuilder()
     .setCustomId('evidence_url')
-    .setLabel('Evidence URL (optional)')
     .setStyle(TextInputStyle.Short)
     .setRequired(false)
     .setMaxLength(500)

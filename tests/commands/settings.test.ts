@@ -113,7 +113,12 @@ describe('settingsCommand', () => {
     expect(interaction.showModal).toHaveBeenCalled();
 
     const modalJson = interaction.showModal.mock.calls[0][0].toJSON();
+    const timezoneComponent = modalJson.components.find(
+      (component: { label?: string }) => component.label === 'Timezone',
+    )?.component;
+
     expect(modalJson.custom_id).toBe('settings_modal');
+    expect(timezoneComponent).not.toHaveProperty('label');
     expect(modalJson.components).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

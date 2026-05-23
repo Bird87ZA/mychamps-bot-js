@@ -246,7 +246,6 @@ function textInputLabel({
 }): LabelBuilder {
   const input = new TextInputBuilder()
     .setCustomId(customId)
-    .setLabel(label)
     .setStyle(TextInputStyle.Short)
     .setRequired(false)
     .setMaxLength(maxLength);
