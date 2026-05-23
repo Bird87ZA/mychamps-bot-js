@@ -9,7 +9,7 @@ import {
   TextChannel,
 } from 'discord.js';
 import { prisma } from '../database';
-import { getSetting } from '../utils/settings';
+import { formatRoleMentions, getTicketAccessRoleIds } from '../utils/incidentSettings';
 
 /**
  * Called when a new message is created in a guild channel.
@@ -145,8 +145,8 @@ export async function handleDefenceDoneInteraction(
   });
 
   if (allDone && channel) {
-    const stewardRoleId = await getSetting(guildId, 'steward-role');
-    const mention = stewardRoleId ? `<@&${stewardRoleId}>` : 'Stewards';
+    const ticketAccessRoleIds = await getTicketAccessRoleIds(guildId);
+    const mention = formatRoleMentions(ticketAccessRoleIds);
     await channel.send(
       `${mention} All defendants have submitted their defence. This incident is now awaiting your review.`,
     );

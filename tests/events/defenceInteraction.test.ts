@@ -279,7 +279,7 @@ describe('handleDefenceDoneInteraction', () => {
     );
   });
 
-  it('sends steward mention when all defendants have submitted', async () => {
+  it('sends ticket access role mentions when all defendants have submitted', async () => {
     const mockSend = vi.fn();
     const mockChannel = {
       type: 0,
@@ -309,11 +309,15 @@ describe('handleDefenceDoneInteraction', () => {
     });
 
     mockPrisma.incident.update.mockResolvedValue({} as never);
-    mockGetSetting.mockResolvedValue('steward-role-id');
+    mockGetSetting.mockImplementation(async (_guildId, key) => {
+      if (key === 'ticket-access-roles') return '["ticket-role-a","ticket-role-b"]';
+      return null;
+    });
 
     await handleDefenceDoneInteraction(interaction as never, client as never);
 
-    expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('<@&steward-role-id>'));
+    expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('<@&ticket-role-a>'));
+    expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('<@&ticket-role-b>'));
   });
 
   it('replies with error when defence already submitted by this user', async () => {

@@ -56,8 +56,10 @@ describe('incidentReminderService', () => {
       },
     ]);
 
-    // First getSetting call: interval, second: steward role
-    mockGetSetting.mockResolvedValueOnce('24').mockResolvedValueOnce('steward-role-id');
+    // First getSetting call: interval, second: ticket access roles
+    mockGetSetting
+      .mockResolvedValueOnce('24')
+      .mockResolvedValueOnce('["ticket-role-a","ticket-role-b"]');
     mockPrisma.incident.update.mockResolvedValue({} as never);
 
     const client = createMockClient();
@@ -65,7 +67,8 @@ describe('incidentReminderService', () => {
 
     await incidentReminderService.execute(client as never);
 
-    expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('<@&steward-role-id>'));
+    expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('<@&ticket-role-a>'));
+    expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('<@&ticket-role-b>'));
     expect(mockPrisma.incident.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 1 },
@@ -125,7 +128,7 @@ describe('incidentReminderService', () => {
       },
     ]);
 
-    // No interval configured, no steward role
+    // No interval configured, no ticket access roles
     mockGetSetting.mockResolvedValue(null);
     mockPrisma.incident.update.mockResolvedValue({} as never);
 
@@ -134,7 +137,7 @@ describe('incidentReminderService', () => {
 
     await incidentReminderService.execute(client as never);
 
-    expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('Stewards'));
+    expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('Ticket access roles'));
     expect(mockPrisma.incident.update).toHaveBeenCalled();
   });
 

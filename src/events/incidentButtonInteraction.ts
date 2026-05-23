@@ -5,21 +5,32 @@ import {
   ChannelType,
   Client,
   EmbedBuilder,
+  FileUploadBuilder,
   GuildChannelCreateOptions,
+  LabelBuilder,
   MessageFlags,
   ModalBuilder,
   ModalSubmitInteraction,
   OverwriteType,
   PermissionFlagsBits,
-  StringSelectMenuInteraction,
   TextChannel,
   TextInputBuilder,
   TextInputStyle,
+  UserSelectMenuBuilder,
 } from 'discord.js';
 import { prisma } from '../database';
 import { MyChampsApiClient } from '../services/myChampsApiClient';
-import { getSetting } from '../utils/settings';
-import type { ButtonInteraction } from 'discord.js';
+import {
+  formatRoleMentions,
+  getIncidentsCategoryId,
+  getTicketAccessRoleIds,
+} from '../utils/incidentSettings';
+import type { ButtonInteraction, StringSelectMenuInteraction, User } from 'discord.js';
+
+interface EvidenceFile {
+  name: string;
+  url: string;
+}
 
 export async function handleIncidentButtonInteraction(
   interaction: ButtonInteraction,
@@ -48,33 +59,43 @@ export async function handleIncidentButtonInteraction(
     .setCustomId(`incident_report_modal!${incidentButton.id}`)
     .setTitle('Report an Incident');
 
-  const driverNamesInput = new TextInputBuilder()
-    .setCustomId('driver_names')
-    .setLabel('Driver Name(s) Involved (comma-separated)')
-    .setStyle(TextInputStyle.Short)
-    .setRequired(true)
-    .setMaxLength(500)
-    .setPlaceholder('e.g. Driver A, Driver B');
+  const driverUsersInput = new UserSelectMenuBuilder()
+    .setCustomId('driver_users')
+    .setPlaceholder('Select driver(s) involved')
+    .setMinValues(0)
+    .setMaxValues(10)
+    .setRequired(false);
 
   const descriptionInput = new TextInputBuilder()
     .setCustomId('description')
-    .setLabel('Description of the incident')
     .setStyle(TextInputStyle.Paragraph)
     .setRequired(true)
     .setMaxLength(1000);
 
   const evidenceUrlInput = new TextInputBuilder()
     .setCustomId('evidence_url')
-    .setLabel('Evidence URL (optional)')
     .setStyle(TextInputStyle.Short)
     .setRequired(false)
     .setMaxLength(500)
     .setPlaceholder('https://...');
 
-  modal.addComponents(
-    new ActionRowBuilder<TextInputBuilder>().addComponents(driverNamesInput),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(descriptionInput),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(evidenceUrlInput),
+  const evidenceFilesInput = new FileUploadBuilder()
+    .setCustomId('evidence_files')
+    .setRequired(false)
+    .setMinValues(0)
+    .setMaxValues(5);
+
+  modal.addLabelComponents(
+    new LabelBuilder()
+      .setLabel('Driver(s) Involved')
+      .setDescription('Select the Discord user(s) involved in the incident')
+      .setUserSelectMenuComponent(driverUsersInput),
+    new LabelBuilder().setLabel('Description').setTextInputComponent(descriptionInput),
+    new LabelBuilder().setLabel('Evidence URL').setTextInputComponent(evidenceUrlInput),
+    new LabelBuilder()
+      .setLabel('Evidence Files')
+      .setDescription('Optional screenshots, clips, or supporting files')
+      .setFileUploadComponent(evidenceFilesInput),
   );
 
   await interaction.showModal(modal);
@@ -94,9 +115,10 @@ export async function handleIncidentButtonInteraction(
 
   await modalSubmit.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const driverNames = modalSubmit.fields.getTextInputValue('driver_names');
+  const selectedDriverUsers = getSelectedDriverUsers(modalSubmit);
   const description = modalSubmit.fields.getTextInputValue('description');
   const evidenceUrl = modalSubmit.fields.getTextInputValue('evidence_url') || undefined;
+  const evidenceFiles = getEvidenceFiles(modalSubmit);
 
   const guildId = interaction.guildId!;
   const guild = interaction.guild;
@@ -114,7 +136,7 @@ export async function handleIncidentButtonInteraction(
       championship_slug: incidentButton.championshipSlug,
       reported_by_discord_id: interaction.user.id,
       description,
-      evidence_url: evidenceUrl,
+      evidence_url: evidenceUrl ?? evidenceFiles[0]?.url,
       defendant_driver_ids: [],
     });
     apiIncidentId = result?.id ?? null;
@@ -123,8 +145,8 @@ export async function handleIncidentButtonInteraction(
   }
 
   // Resolve settings
-  const incidentCategoryId = await getSetting(guildId, 'incident-category');
-  const stewardRoleId = await getSetting(guildId, 'steward-role');
+  const incidentCategoryId = await getIncidentsCategoryId(guildId);
+  const ticketAccessRoleIds = await getTicketAccessRoleIds(guildId);
 
   // Create private text channel
   const channelName = `incident-${Date.now()}`;
@@ -145,15 +167,16 @@ export async function handleIncidentButtonInteraction(
           type: OverwriteType.Member,
           allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
         },
-        ...(stewardRoleId
-          ? [
-              {
-                id: stewardRoleId,
-                type: OverwriteType.Role as const,
-                allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
-              },
-            ]
-          : []),
+        ...ticketAccessRoleIds.map((roleId) => ({
+          id: roleId,
+          type: OverwriteType.Role as const,
+          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
+        })),
+        ...selectedDriverUsers.map((user) => ({
+          id: user.id,
+          type: OverwriteType.Member as const,
+          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
+        })),
         {
           id: interaction.user.id,
           type: OverwriteType.Member,
@@ -172,19 +195,17 @@ export async function handleIncidentButtonInteraction(
   }
 
   // Post incident embed in the new channel
-  const defendants = driverNames
-    .split(',')
-    .map((n) => n.trim())
-    .filter(Boolean);
+  const defendants = selectedDriverUsers.map((user) => user.id);
+  const evidenceValue = formatEvidenceValue(evidenceUrl, evidenceFiles);
 
   const embed = new EmbedBuilder()
     .setTitle('Incident Report')
     .addFields(
       { name: 'Championship', value: incidentButton.championshipSlug, inline: true },
       { name: 'Reported By', value: `<@${interaction.user.id}>`, inline: true },
-      { name: 'Driver(s) Involved', value: defendants.join(', ') || 'N/A' },
+      { name: 'Driver(s) Involved', value: formatUserMentions(selectedDriverUsers) },
       { name: 'Description', value: description },
-      ...(evidenceUrl ? [{ name: 'Evidence', value: evidenceUrl }] : []),
+      ...(evidenceValue ? [{ name: 'Evidence', value: evidenceValue }] : []),
     )
     .setColor(0xe74c3c)
     .setTimestamp();
@@ -198,6 +219,12 @@ export async function handleIncidentButtonInteraction(
   );
 
   await (incidentChannel as TextChannel).send({ embeds: [embed], components: [doneRow] });
+
+  if (selectedDriverUsers.length > 0) {
+    await (incidentChannel as TextChannel).send(
+      `${selectedDriverUsers.map((user) => `<@${user.id}>`).join(' ')} Please post a defence`,
+    );
+  }
 
   // Save local incident record
   const savedIncident = await prisma.incident.create({
@@ -217,6 +244,46 @@ export async function handleIncidentButtonInteraction(
   await modalSubmit.editReply({
     content: `Incident reported successfully. Channel created: <#${incidentChannel.id}>`,
   });
+}
+
+function formatUserMentions(users: User[]): string {
+  return users.length > 0 ? users.map((user) => `<@${user.id}>`).join(', ') : 'N/A';
+}
+
+function getEvidenceFiles(modalSubmit: ModalSubmitInteraction): EvidenceFile[] {
+  try {
+    return Array.from(modalSubmit.fields.getUploadedFiles('evidence_files')?.values() ?? []).map(
+      (file) => ({ name: file.name, url: file.url }),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function getSelectedDriverUsers(modalSubmit: ModalSubmitInteraction): User[] {
+  try {
+    return Array.from(modalSubmit.fields.getSelectedUsers('driver_users')?.values() ?? []);
+  } catch {
+    return [];
+  }
+}
+
+function formatEvidenceValue(
+  evidenceUrl: string | undefined,
+  evidenceFiles: EvidenceFile[],
+): string | null {
+  const evidenceLinks = [
+    ...(evidenceUrl ? [evidenceUrl] : []),
+    ...evidenceFiles.map((file) => `[${file.name}](${file.url})`),
+  ];
+
+  if (evidenceLinks.length === 0) {
+    return null;
+  }
+
+  const value = evidenceLinks.join('\n');
+
+  return value.length > 1024 ? value.slice(0, 1021) + '...' : value;
 }
 
 export async function handleIncidentDefenceButtonInteraction(
@@ -296,8 +363,8 @@ export async function handleIncidentDefenceButtonInteraction(
   });
 
   if (allDone) {
-    const stewardRoleId = await getSetting(guildId, 'steward-role');
-    const mention = stewardRoleId ? `<@&${stewardRoleId}>` : 'Stewards';
+    const ticketAccessRoleIds = await getTicketAccessRoleIds(guildId);
+    const mention = formatRoleMentions(ticketAccessRoleIds);
     if (channel && 'send' in channel) {
       await channel.send(
         `${mention} All defendants have submitted their defence. This incident is awaiting your review.`,

@@ -86,6 +86,34 @@ describe('handleIncidentButtonInteraction', () => {
     await handleIncidentButtonInteraction(interaction as never, client as never);
 
     expect(mockShowModal).toHaveBeenCalled();
+
+    const modalJson = mockShowModal.mock.calls[0][0].toJSON();
+    const descriptionComponent = modalJson.components.find(
+      (component: { label?: string }) => component.label === 'Description',
+    )?.component;
+    const evidenceUrlComponent = modalJson.components.find(
+      (component: { label?: string }) => component.label === 'Evidence URL',
+    )?.component;
+
+    expect(descriptionComponent).not.toHaveProperty('label');
+    expect(evidenceUrlComponent).not.toHaveProperty('label');
+    expect(modalJson.components).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: 'Driver(s) Involved',
+          component: expect.objectContaining({
+            custom_id: 'driver_users',
+            type: 5,
+            min_values: 0,
+            required: false,
+          }),
+        }),
+        expect.objectContaining({
+          label: 'Evidence Files',
+          component: expect.objectContaining({ custom_id: 'evidence_files', type: 19 }),
+        }),
+      ]),
+    );
   });
 
   it('creates incident channel and saves record on modal submit', async () => {
@@ -98,11 +126,21 @@ describe('handleIncidentButtonInteraction', () => {
     const mockModalSubmit = {
       fields: {
         getTextInputValue: vi.fn((field: string) => {
-          if (field === 'driver_names') return 'Driver A, Driver B';
           if (field === 'description') return 'Collision at turn 1';
           if (field === 'evidence_url') return 'https://example.com/video';
           return '';
         }),
+        getSelectedUsers: vi.fn(
+          () =>
+            new Map([
+              ['driver-user-a', { id: 'driver-user-a', username: 'Driver A' }],
+              ['driver-user-b', { id: 'driver-user-b', username: 'Driver B' }],
+            ]),
+        ),
+        getUploadedFiles: vi.fn(
+          () =>
+            new Map([['file-1', { name: 'clip.mp4', url: 'https://cdn.discordapp.com/clip.mp4' }]]),
+        ),
       },
       deferReply: vi.fn(),
       editReply: vi.fn(),
@@ -158,7 +196,11 @@ describe('handleIncidentButtonInteraction', () => {
 
     const mockApiClient = { createIncident: vi.fn().mockResolvedValue({ id: 42 }) };
     mockFromGuild.mockResolvedValue(mockApiClient as never);
-    mockGetSetting.mockResolvedValue(null);
+    mockGetSetting.mockImplementation(async (_guildId, key) => {
+      if (key === 'incidents-category') return 'incidents-category-id';
+      if (key === 'ticket-access-roles') return '["ticket-role-a","ticket-role-b"]';
+      return null;
+    });
 
     await handleIncidentButtonInteraction(interaction as never, client as never);
 
@@ -168,14 +210,134 @@ describe('handleIncidentButtonInteraction', () => {
         data: expect.objectContaining({
           guildId: '123456789',
           championshipSlug: 'champ-a',
-          defendants: expect.arrayContaining(['Driver A', 'Driver B']),
+          defendants: expect.arrayContaining(['driver-user-a', 'driver-user-b']),
           status: 'open',
         }),
       }),
     );
+    expect(mockCreateChannel.mock.calls[0][0].permissionOverwrites).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'ticket-role-a' }),
+        expect.objectContaining({ id: 'ticket-role-b' }),
+        expect.objectContaining({ id: 'driver-user-a' }),
+        expect.objectContaining({ id: 'driver-user-b' }),
+      ]),
+    );
+    expect(mockCreateChannel.mock.calls[0][0].parent).toBe('incidents-category-id');
+    expect(mockSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        embeds: expect.arrayContaining([
+          expect.objectContaining({
+            data: expect.objectContaining({
+              fields: expect.arrayContaining([
+                expect.objectContaining({
+                  name: 'Driver(s) Involved',
+                  value: '<@driver-user-a>, <@driver-user-b>',
+                }),
+                expect.objectContaining({
+                  name: 'Evidence',
+                  value: expect.stringContaining('clip.mp4'),
+                }),
+              ]),
+            }),
+          }),
+        ]),
+      }),
+    );
+    expect(mockSend).toHaveBeenCalledWith(
+      '<@driver-user-a> <@driver-user-b> Please post a defence',
+    );
     expect(mockModalSubmit.editReply).toHaveBeenCalledWith(
       expect.objectContaining({ content: expect.stringContaining('Incident reported') }),
     );
+  });
+
+  it('does not add driver access or prompt for defence when no users are selected', async () => {
+    const mockSend = vi.fn().mockResolvedValue({ id: 'new-channel-msg' });
+    const mockCreateChannel = vi.fn().mockResolvedValue({
+      id: 'new-channel-id',
+      send: mockSend,
+    });
+
+    const mockModalSubmit = {
+      fields: {
+        getTextInputValue: vi.fn((field: string) => {
+          if (field === 'description') return 'Unsafe rejoin';
+          return '';
+        }),
+        getSelectedUsers: vi.fn(() => null),
+        getUploadedFiles: vi.fn(() => null),
+      },
+      deferReply: vi.fn(),
+      editReply: vi.fn(),
+      user: { id: 'user1' },
+    };
+
+    const interaction = createMockInteraction({
+      customId: 'incident_report!champ-a',
+      message: { id: 'msg-123' },
+      showModal: vi.fn(),
+      awaitModalSubmit: vi.fn().mockResolvedValue(mockModalSubmit),
+      guild: {
+        name: 'Test Guild',
+        iconURL: () => 'https://icon.url',
+        roles: {
+          everyone: { id: 'everyone-role-id' },
+        },
+        channels: {
+          create: mockCreateChannel,
+        },
+      },
+    });
+    const client = createMockClient();
+
+    mockPrisma.incidentButton.findUnique.mockResolvedValue({
+      id: 1,
+      guildId: '123456789',
+      channelId: '987654321',
+      messageId: 'msg-123',
+      championshipSlug: 'champ-a',
+      buttonLabel: 'Report Incident',
+      buttonColor: 'Danger',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    mockPrisma.incident.create.mockResolvedValue({
+      id: 1,
+      guildId: '123456789',
+      channelId: 'new-channel-id',
+      mychampsIncidentId: null,
+      championshipSlug: 'champ-a',
+      defendants: [],
+      status: 'open',
+      defenceSubmitted: [],
+      lastReminderAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const mockApiClient = { createIncident: vi.fn().mockResolvedValue({ id: 42 }) };
+    mockFromGuild.mockResolvedValue(mockApiClient as never);
+    mockGetSetting.mockResolvedValue(null);
+
+    await handleIncidentButtonInteraction(interaction as never, client as never);
+
+    expect(mockPrisma.incident.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          defendants: [],
+        }),
+      }),
+    );
+    expect(mockCreateChannel.mock.calls[0][0].permissionOverwrites).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'driver-user-a' }),
+        expect.objectContaining({ id: 'driver-user-b' }),
+      ]),
+    );
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    expect(mockSend).not.toHaveBeenCalledWith(expect.stringContaining('Please post a defence'));
   });
 });
 
@@ -255,7 +417,7 @@ describe('handleIncidentDefenceButtonInteraction', () => {
     );
   });
 
-  it('tags steward role when all defendants submit defence', async () => {
+  it('tags ticket access roles when all defendants submit defence', async () => {
     const mockSend = vi.fn();
     const mockChannel = {
       type: 0,
@@ -286,11 +448,15 @@ describe('handleIncidentDefenceButtonInteraction', () => {
     });
 
     mockPrisma.incident.update.mockResolvedValue({} as never);
-    mockGetSetting.mockResolvedValue('steward-role-id');
+    mockGetSetting.mockImplementation(async (_guildId, key) => {
+      if (key === 'ticket-access-roles') return '["ticket-role-a","ticket-role-b"]';
+      return null;
+    });
 
     await handleIncidentDefenceButtonInteraction(interaction as never, client as never);
 
-    expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('<@&steward-role-id>'));
+    expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('<@&ticket-role-a>'));
+    expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('<@&ticket-role-b>'));
   });
 
   it('replies with error when incident not found', async () => {
