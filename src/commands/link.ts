@@ -78,8 +78,14 @@ export const linkCommand: BotCommand = {
             );
           } else {
             const list = championships
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              .map((c: any, i: number) => `${i + 1}. ${c.name ?? c.slug ?? c.id}`)
+              .map((c, i) => {
+                const championshipName = c.name ?? c.slug ?? c.id;
+                const label = c.team_name
+                  ? `${c.team_name} - ${championshipName}`
+                  : championshipName;
+
+                return `${i + 1}. ${label}`;
+              })
               .join('\n');
             await ephemeralReply(interaction, `Your championships:\n${list}`);
           }

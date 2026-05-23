@@ -32,6 +32,14 @@ export interface LinkedStatsResponse {
   combined: DriverStats;
 }
 
+export interface ChampionshipSummary {
+  id: number;
+  name: string;
+  slug: string;
+  team_name?: string;
+  created_at?: string;
+}
+
 export interface IncidentData {
   championship_slug: string;
   reported_by_discord_id: string;
@@ -121,10 +129,8 @@ export class MyChampsApiClient {
     });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async getChampionships(discordUserId: string): Promise<any[]> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return this.request<any[]>(`/api/discord/championships/${discordUserId}`);
+  async getChampionships(discordUserId: string): Promise<ChampionshipSummary[]> {
+    return this.request<ChampionshipSummary[]>(`/api/discord/championships/${discordUserId}`);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
