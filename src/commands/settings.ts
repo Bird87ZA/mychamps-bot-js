@@ -31,6 +31,7 @@ import {
 } from '../utils/incidentSettings';
 
 const SETTINGS_MODAL_CUSTOM_ID = 'settings_modal';
+const INCIDENT_SETTINGS_MODAL_CUSTOM_ID = 'incident_settings_modal';
 
 const SETTINGS_FIELD_IDS = {
   timezone: 'settings_timezone',
@@ -62,7 +63,10 @@ export const settingsCommand: BotCommand = {
         .setName('section')
         .setDescription('Open a specific settings section')
         .setRequired(false)
-        .addChoices({ name: '/stats leagues', value: 'stats' }),
+        .addChoices(
+          { name: '/stats leagues', value: 'stats' },
+          { name: 'incident tickets', value: 'incidents' },
+        ),
     ),
 
   async execute(interaction: ChatInputCommandInteraction, _client: Client) {
@@ -73,6 +77,11 @@ export const settingsCommand: BotCommand = {
 
       if (section === 'stats') {
         await handleStatsSettings(interaction);
+        return;
+      }
+
+      if (section === 'incidents') {
+        await handleIncidentSettingsModal(interaction, guildId);
         return;
       }
 
@@ -125,6 +134,48 @@ async function handleSettingsModal(
   await modalSubmit.editReply({ content: 'Settings updated successfully.' });
 }
 
+async function handleIncidentSettingsModal(
+  interaction: ChatInputCommandInteraction,
+  guildId: string,
+): Promise<void> {
+  if (!canManageSettings(interaction)) {
+    await interaction.reply({
+      content: 'You need Administrator or Manage Guild permissions to use this command.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const values = await getBotSettingsValues(guildId);
+  const modal = buildIncidentSettingsModal(values);
+
+  await interaction.showModal(modal);
+
+  let modalSubmit: ModalSubmitInteraction;
+  try {
+    modalSubmit = await interaction.awaitModalSubmit({
+      filter: (i) =>
+        i.customId === INCIDENT_SETTINGS_MODAL_CUSTOM_ID && i.user.id === interaction.user.id,
+      time: 300_000,
+    });
+  } catch {
+    return;
+  }
+
+  await modalSubmit.deferReply({ flags: MessageFlags.Ephemeral });
+
+  try {
+    await saveIncidentSettingsFromModal(guildId, modalSubmit);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Incident settings could not be saved.';
+    await modalSubmit.editReply({ content: message });
+    return;
+  }
+
+  await modalSubmit.editReply({ content: 'Incident settings updated successfully.' });
+}
+
 function canManageSettings(interaction: ChatInputCommandInteraction): boolean {
   return Boolean(
     interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
@@ -163,29 +214,6 @@ async function getBotSettingsValues(guildId: string): Promise<BotSettingsValues>
 }
 
 function buildSettingsModal(values: BotSettingsValues): ModalBuilder {
-  const categorySelect = new ChannelSelectMenuBuilder()
-    .setCustomId(SETTINGS_FIELD_IDS.incidentsCategory)
-    .setPlaceholder('Select an incident category')
-    .setChannelTypes(ChannelType.GuildCategory)
-    .setMinValues(0)
-    .setMaxValues(1)
-    .setRequired(false);
-
-  if (values.incidentsCategory) {
-    categorySelect.setDefaultChannels(values.incidentsCategory);
-  }
-
-  const ticketAccessRoleSelect = new RoleSelectMenuBuilder()
-    .setCustomId(SETTINGS_FIELD_IDS.ticketAccessRoles)
-    .setPlaceholder('Select ticket access roles')
-    .setMinValues(0)
-    .setMaxValues(25)
-    .setRequired(false);
-
-  if (values.ticketAccessRoleIds.length > 0) {
-    ticketAccessRoleSelect.setDefaultRoles(...values.ticketAccessRoleIds);
-  }
-
   return new ModalBuilder()
     .setCustomId(SETTINGS_MODAL_CUSTOM_ID)
     .setTitle('Bot Settings')
@@ -220,6 +248,37 @@ function buildSettingsModal(values: BotSettingsValues): ModalBuilder {
         value: values.myChampsApiToken,
         maxLength: 1000,
       }),
+    );
+}
+
+function buildIncidentSettingsModal(values: BotSettingsValues): ModalBuilder {
+  const categorySelect = new ChannelSelectMenuBuilder()
+    .setCustomId(SETTINGS_FIELD_IDS.incidentsCategory)
+    .setPlaceholder('Select an incident category')
+    .setChannelTypes(ChannelType.GuildCategory)
+    .setMinValues(0)
+    .setMaxValues(1)
+    .setRequired(false);
+
+  if (values.incidentsCategory) {
+    categorySelect.setDefaultChannels(values.incidentsCategory);
+  }
+
+  const ticketAccessRoleSelect = new RoleSelectMenuBuilder()
+    .setCustomId(SETTINGS_FIELD_IDS.ticketAccessRoles)
+    .setPlaceholder('Select ticket access roles')
+    .setMinValues(0)
+    .setMaxValues(25)
+    .setRequired(false);
+
+  if (values.ticketAccessRoleIds.length > 0) {
+    ticketAccessRoleSelect.setDefaultRoles(...values.ticketAccessRoleIds);
+  }
+
+  return new ModalBuilder()
+    .setCustomId(INCIDENT_SETTINGS_MODAL_CUSTOM_ID)
+    .setTitle('Incident Settings')
+    .addLabelComponents(
       new LabelBuilder()
         .setLabel('Incidents Category')
         .setDescription('Category where incident channels are created')
@@ -282,12 +341,6 @@ async function saveSettingsFromModal(
   const myChampsApiToken = cleanModalText(
     modalSubmit.fields.getTextInputValue(SETTINGS_FIELD_IDS.myChampsApiToken),
   );
-  const incidentCategoryId = modalSubmit.fields
-    .getSelectedChannels(SETTINGS_FIELD_IDS.incidentsCategory, false, [ChannelType.GuildCategory])
-    ?.first()?.id;
-  const ticketAccessRoleIds = Array.from(
-    modalSubmit.fields.getSelectedRoles(SETTINGS_FIELD_IDS.ticketAccessRoles)?.keys() ?? [],
-  );
 
   const settingWrites: Array<Promise<void>> = [];
 
@@ -326,16 +379,32 @@ async function saveSettingsFromModal(
     settingWrites.push(setSetting(guildId, 'mychamps-api-token', myChampsApiToken));
   }
 
+  await Promise.all(settingWrites);
+
+  if (remindAttendees) {
+    await rebuildReminders(guildId);
+  }
+}
+
+async function saveIncidentSettingsFromModal(
+  guildId: string,
+  modalSubmit: ModalSubmitInteraction,
+): Promise<void> {
+  const incidentCategoryId = modalSubmit.fields
+    .getSelectedChannels(SETTINGS_FIELD_IDS.incidentsCategory, false, [ChannelType.GuildCategory])
+    ?.first()?.id;
+  const ticketAccessRoleIds = Array.from(
+    modalSubmit.fields.getSelectedRoles(SETTINGS_FIELD_IDS.ticketAccessRoles)?.keys() ?? [],
+  );
+
+  const settingWrites: Array<Promise<void>> = [];
+
   settingWrites.push(setSetting(guildId, INCIDENTS_CATEGORY_SETTING_KEY, incidentCategoryId ?? ''));
   settingWrites.push(
     setSetting(guildId, TICKET_ACCESS_ROLES_SETTING_KEY, JSON.stringify(ticketAccessRoleIds)),
   );
 
   await Promise.all(settingWrites);
-
-  if (remindAttendees) {
-    await rebuildReminders(guildId);
-  }
 }
 
 function cleanModalText(value: string): string | null {

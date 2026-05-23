@@ -68,6 +68,7 @@ describe('helpCommand', () => {
 
   it('documents incident setup and review flow', () => {
     expect(helpSections.incidents.content).toContain('/incident setup');
+    expect(helpSections.incidents.content).toContain('/settings section: incidents');
     expect(helpSections.incidents.content).toContain('incidents-category');
     expect(helpSections.incidents.content).toContain('ticket-access-roles');
     expect(helpSections.incidents.content).toContain('/incident close');
