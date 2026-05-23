@@ -128,15 +128,55 @@ describe('incidentCommand', () => {
       );
     });
 
-    it('shows championship select menu when championships are available', async () => {
+    it('shows championship select menu with team-prefixed labels in setup order', async () => {
       const championships = [
-        { name: 'Championship A', slug: 'champ-a' },
-        { name: 'Championship B', slug: 'champ-b' },
+        {
+          id: 1,
+          name: 'Championship 1',
+          slug: 'team-b-champ-1',
+          team_name: 'Team B',
+          created_at: '2026-01-01T12:00:00.000Z',
+        },
+        {
+          id: 2,
+          name: 'Championship 1',
+          slug: 'team-a-champ-1',
+          team_name: 'Team A',
+          created_at: '2026-01-01T12:00:00.000Z',
+        },
+        {
+          id: 3,
+          name: 'Championship 3',
+          slug: 'team-b-champ-3',
+          team_name: 'Team B',
+          created_at: '2026-01-03T12:00:00.000Z',
+        },
+        {
+          id: 4,
+          name: 'Championship 3',
+          slug: 'team-a-champ-3',
+          team_name: 'Team A',
+          created_at: '2026-01-03T12:00:00.000Z',
+        },
+        {
+          id: 5,
+          name: 'Championship 2',
+          slug: 'team-b-champ-2',
+          team_name: 'Team B',
+          created_at: '2026-01-02T12:00:00.000Z',
+        },
+        {
+          id: 6,
+          name: 'Championship 2',
+          slug: 'team-a-champ-2',
+          team_name: 'Team A',
+          created_at: '2026-01-02T12:00:00.000Z',
+        },
       ];
 
       const mockSelectInteraction = {
         user: { id: 'user1' },
-        values: ['champ-a'],
+        values: ['team-a-champ-3'],
         showModal: vi.fn(),
         awaitModalSubmit: vi.fn().mockRejectedValue(new Error('timeout')),
         editReply: vi.fn(),
@@ -168,6 +208,34 @@ describe('incidentCommand', () => {
           components: expect.any(Array),
         }),
       );
+
+      const replyPayload = interaction.reply.mock.calls[0][0] as {
+        components: Array<{
+          toJSON: () => {
+            components: Array<{
+              options: Array<{ label: string; value: string }>;
+            }>;
+          };
+        }>;
+      };
+      const options = replyPayload.components[0].toJSON().components[0].options;
+
+      expect(options.map((option) => option.label)).toEqual([
+        'Team A - Championship 3',
+        'Team A - Championship 2',
+        'Team A - Championship 1',
+        'Team B - Championship 3',
+        'Team B - Championship 2',
+        'Team B - Championship 1',
+      ]);
+      expect(options.map((option) => option.value)).toEqual([
+        'team-a-champ-3',
+        'team-a-champ-2',
+        'team-a-champ-1',
+        'team-b-champ-3',
+        'team-b-champ-2',
+        'team-b-champ-1',
+      ]);
       expect(mockSelectInteraction.showModal).toHaveBeenCalled();
     });
   });

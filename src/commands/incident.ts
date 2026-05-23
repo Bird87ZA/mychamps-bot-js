@@ -17,7 +17,7 @@ import {
 } from 'discord.js';
 import { BotCommand } from '../types';
 import { prisma } from '../database';
-import { MyChampsApiClient } from '../services/myChampsApiClient';
+import { ChampionshipSummary, MyChampsApiClient } from '../services/myChampsApiClient';
 import { getSetting } from '../utils/settings';
 
 const BUTTON_COLOR_MAP: Record<string, ButtonStyle> = {
@@ -26,6 +26,40 @@ const BUTTON_COLOR_MAP: Record<string, ButtonStyle> = {
   Success: ButtonStyle.Success,
   Danger: ButtonStyle.Danger,
 };
+
+function getChampionshipCreatedAtTimestamp(championship: ChampionshipSummary): number {
+  const timestamp = Date.parse(championship.created_at ?? '');
+
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function compareChampionshipsForSetup(
+  championshipA: ChampionshipSummary,
+  championshipB: ChampionshipSummary,
+): number {
+  const teamComparison = (championshipA.team_name ?? '').localeCompare(
+    championshipB.team_name ?? '',
+    undefined,
+    { sensitivity: 'base' },
+  );
+
+  if (teamComparison !== 0) {
+    return teamComparison;
+  }
+
+  return (
+    getChampionshipCreatedAtTimestamp(championshipB) -
+    getChampionshipCreatedAtTimestamp(championshipA)
+  );
+}
+
+function formatChampionshipOptionLabel(championship: ChampionshipSummary): string {
+  const championshipName = championship.name || championship.slug;
+
+  return championship.team_name
+    ? `${championship.team_name} - ${championshipName}`
+    : championshipName;
+}
 
 export const incidentCommand: BotCommand = {
   data: new SlashCommandBuilder()
@@ -82,7 +116,7 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
     return;
   }
 
-  let championships: Array<{ name: string; slug: string }>;
+  let championships: ChampionshipSummary[];
   try {
     championships = await apiClient.getChampionships(interaction.user.id);
   } catch (error) {
@@ -108,8 +142,9 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
     return;
   }
 
-  const options = championships.slice(0, 25).map((c) => ({
-    label: c.name,
+  const sortedChampionships = championships.slice().sort(compareChampionshipsForSetup);
+  const options = sortedChampionships.slice(0, 25).map((c) => ({
+    label: formatChampionshipOptionLabel(c),
     value: c.slug,
   }));
 
@@ -144,7 +179,7 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
   }
 
   const selectedSlug = selectInteraction.values[0];
-  const selectedChampionship = championships.find((c) => c.slug === selectedSlug);
+  const selectedChampionship = sortedChampionships.find((c) => c.slug === selectedSlug);
 
   // Show modal to get button label and color
   const modal = new ModalBuilder()
