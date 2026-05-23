@@ -79,14 +79,6 @@ export const settingsCommand: BotCommand = {
     )
     .addSubcommand((sub) =>
       sub
-        .setName('mychamps-api-url')
-        .setDescription('Set the base URL for the MyChamps API')
-        .addStringOption((opt) =>
-          opt.setName('value').setDescription('Base URL for MyChamps API').setRequired(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
         .setName('mychamps-api-token')
         .setDescription('Set the API token for MyChamps')
         .addStringOption((opt) =>
@@ -161,16 +153,6 @@ export const settingsCommand: BotCommand = {
         return;
       }
 
-      if (subcommand === 'mychamps-api-url') {
-        await saveSettingAndReply(
-          interaction,
-          guildId,
-          'mychamps-api-url',
-          interaction.options.getString('value', true),
-        );
-        return;
-      }
-
       if (subcommand === 'mychamps-api-token') {
         await saveSettingAndReply(
           interaction,
@@ -222,10 +204,14 @@ async function handleStatsSettings(interaction: ChatInputCommandInteraction): Pr
   let apiClient: MyChampsApiClient;
   try {
     apiClient = await MyChampsApiClient.fromGuild(guildId);
-  } catch {
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'MyChamps API is not configured for this server. Please set `mychamps-api-token` in settings.';
+
     await interaction.reply({
-      content:
-        'MyChamps API is not configured for this server. Please set `mychamps-api-url` and `mychamps-api-token` in settings.',
+      content: message,
       flags: MessageFlags.Ephemeral,
     });
     return;

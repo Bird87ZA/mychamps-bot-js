@@ -31,6 +31,14 @@ describe('settingsCommand', () => {
     expect(settingsCommand.data.name).toBe('settings');
   });
 
+  it('does not expose mychamps-api-url as a server setting', () => {
+    const json = settingsCommand.data.toJSON();
+    const subcommands = json.options?.map((o: { name: string }) => o.name) ?? [];
+
+    expect(subcommands).not.toContain('mychamps-api-url');
+    expect(subcommands).toContain('mychamps-api-token');
+  });
+
   it('saves valid timezone', async () => {
     const interaction = createMockInteraction();
     interaction.options.getSubcommand.mockReturnValue('timezone');
@@ -135,24 +143,6 @@ describe('settingsCommand', () => {
     await settingsCommand.execute(interaction as never, client as never);
 
     expect(setSetting).toHaveBeenCalledWith('123456789', 'incident-reminder-interval', '12');
-  });
-
-  it('saves mychamps-api-url', async () => {
-    const interaction = createMockInteraction();
-    interaction.options.getSubcommand.mockReturnValue('mychamps-api-url');
-    interaction.options.getString.mockImplementation((name: string) => {
-      if (name === 'value') return 'https://api.mychamps.example.com';
-      return null;
-    });
-    const client = createMockClient();
-
-    await settingsCommand.execute(interaction as never, client as never);
-
-    expect(setSetting).toHaveBeenCalledWith(
-      '123456789',
-      'mychamps-api-url',
-      'https://api.mychamps.example.com',
-    );
   });
 
   it('saves mychamps-api-token', async () => {

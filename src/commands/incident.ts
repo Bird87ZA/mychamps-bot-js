@@ -17,7 +17,7 @@ import {
 } from 'discord.js';
 import { BotCommand } from '../types';
 import { prisma } from '../database';
-import { MyChampsApiClient } from '../services/myChampsApiClient';
+import { MYCHAMPS_API_BASE_URL, MyChampsApiClient } from '../services/myChampsApiClient';
 import { getSetting } from '../utils/settings';
 
 const BUTTON_COLOR_MAP: Record<string, ButtonStyle> = {
@@ -69,10 +69,14 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
   let apiClient: MyChampsApiClient;
   try {
     apiClient = await MyChampsApiClient.fromGuild(guildId);
-  } catch {
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'MyChamps API is not configured for this server. Please set `mychamps-api-token` in settings.';
+
     await interaction.reply({
-      content:
-        'MyChamps API is not configured for this server. Please set `mychamps-api-url` and `mychamps-api-token` in settings.',
+      content: message,
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -81,9 +85,17 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
   let championships: Array<{ name: string; slug: string }>;
   try {
     championships = await apiClient.getChampionships(interaction.user.id);
-  } catch {
+  } catch (error) {
+    console.error('[IncidentCommand] Failed to fetch championships:', error);
+
     await interaction.reply({
-      content: 'Failed to fetch championships from MyChamps API.',
+      content: [
+        'Failed to fetch championships from MyChamps API.',
+        `The bot uses \`${MYCHAMPS_API_BASE_URL}\` automatically; no API URL setting is required.`,
+        'Check that `mychamps-api-token` is valid and that your Discord account is linked on MyChamps.',
+      ]
+        .filter(Boolean)
+        .join('\n'),
       flags: MessageFlags.Ephemeral,
     });
     return;

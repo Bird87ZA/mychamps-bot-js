@@ -38,10 +38,14 @@ export const statsCommand: BotCommand = {
     let apiClient: MyChampsApiClient;
     try {
       apiClient = await MyChampsApiClient.fromGuild(guildId);
-    } catch {
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'MyChamps API is not configured for this server. Please set `mychamps-api-token` in settings.';
+
       await interaction.reply({
-        content:
-          'MyChamps API is not configured for this server. Please set `mychamps-api-url` and `mychamps-api-token` in settings.',
+        content: message,
         flags: MessageFlags.Ephemeral,
       });
       return;

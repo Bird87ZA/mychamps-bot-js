@@ -82,7 +82,7 @@ describe('linkCommand', () => {
 
     it('replies with error when fromGuild fails for email subcommand', async () => {
       vi.mocked(MyChampsApiClient.fromGuild).mockRejectedValue(
-        new Error('mychamps-api-url is not configured for this guild.'),
+        new Error('mychamps-api-token is not configured for this guild.'),
       );
 
       const interaction = createLinkInteraction();
@@ -94,7 +94,7 @@ describe('linkCommand', () => {
 
       expect(interaction.reply).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: 'mychamps-api-url is not configured for this guild.',
+          content: 'mychamps-api-token is not configured for this guild.',
         }),
       );
     });
@@ -242,7 +242,7 @@ describe('linkCommand', () => {
 
     it('replies with error when fromGuild fails for status subcommand', async () => {
       vi.mocked(MyChampsApiClient.fromGuild).mockRejectedValue(
-        new Error('mychamps-api-url is not configured for this guild.'),
+        new Error('mychamps-api-token is not configured for this guild.'),
       );
 
       const interaction = createLinkInteraction();
@@ -253,7 +253,7 @@ describe('linkCommand', () => {
 
       expect(interaction.reply).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: 'mychamps-api-url is not configured for this guild.',
+          content: 'mychamps-api-token is not configured for this guild.',
         }),
       );
     });

@@ -63,7 +63,6 @@ const helpSections: Record<string, { title: string; content: string }> = {
       '`/settings incident-category` - Set the category for incident channels',
       '`/settings steward-role` - Set the steward notification role',
       '`/settings incident-reminder-interval` - Set incident reminder frequency',
-      '`/settings mychamps-api-url` - Set the MyChamps API base URL',
       '`/settings mychamps-api-token` - Set the MyChamps API token',
       '`/settings stats` - Choose the leagues returned by `/stats`',
     ].join('\n'),

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { MyChampsApiClient } from '../../src/services/myChampsApiClient';
+import { MYCHAMPS_API_BASE_URL, MyChampsApiClient } from '../../src/services/myChampsApiClient';
 
 vi.mock('../../src/utils/settings', () => ({
   getSetting: vi.fn(),
@@ -53,35 +53,27 @@ describe('MyChampsApiClient', () => {
   });
 
   describe('fromGuild', () => {
-    it('creates client from guild settings', async () => {
+    it('creates client from guild token setting and fixed MyChamps URL', async () => {
       vi.mocked(getSetting).mockImplementation(async (_guildId, key) => {
-        if (key === 'mychamps-api-url') return BASE_URL;
         if (key === 'mychamps-api-token') return TOKEN;
         return null;
       });
+      const fetchSpy = mockFetchOk({ message: 'ok' });
+      vi.stubGlobal('fetch', fetchSpy);
 
       const client = await MyChampsApiClient.fromGuild('guild-123');
+      await client.requestLink('a@b.com', 'uid123');
 
-      expect(getSetting).toHaveBeenCalledWith('guild-123', 'mychamps-api-url');
       expect(getSetting).toHaveBeenCalledWith('guild-123', 'mychamps-api-token');
-      expect(client).toBeInstanceOf(MyChampsApiClient);
-    });
-
-    it('throws when mychamps-api-url is not configured', async () => {
-      vi.mocked(getSetting).mockImplementation(async (_guildId, key) => {
-        if (key === 'mychamps-api-url') return null;
-        if (key === 'mychamps-api-token') return TOKEN;
-        return null;
-      });
-
-      await expect(MyChampsApiClient.fromGuild('guild-123')).rejects.toThrow(
-        'mychamps-api-url is not configured',
+      expect(getSetting).not.toHaveBeenCalledWith('guild-123', 'mychamps-api-url');
+      expect(fetchSpy).toHaveBeenCalledWith(
+        `${MYCHAMPS_API_BASE_URL}/api/discord/link`,
+        expect.anything(),
       );
     });
 
     it('throws when mychamps-api-token is not configured', async () => {
       vi.mocked(getSetting).mockImplementation(async (_guildId, key) => {
-        if (key === 'mychamps-api-url') return BASE_URL;
         if (key === 'mychamps-api-token') return null;
         return null;
       });

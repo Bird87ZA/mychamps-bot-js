@@ -7,6 +7,7 @@ import { PermissionFlagsBits } from 'discord.js';
 const mockPrisma = vi.mocked(prisma);
 
 vi.mock('../../src/services/myChampsApiClient', () => ({
+  MYCHAMPS_API_BASE_URL: 'https://mychamps.gg',
   MyChampsApiClient: {
     fromGuild: vi.fn(),
   },
@@ -120,6 +121,11 @@ describe('incidentCommand', () => {
       expect(interaction.reply).toHaveBeenCalledWith(
         expect.objectContaining({
           content: expect.stringContaining('Failed to fetch championships'),
+        }),
+      );
+      expect(interaction.reply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('no API URL setting is required'),
         }),
       );
     });

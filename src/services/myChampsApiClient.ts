@@ -1,5 +1,7 @@
 import { getSetting } from '../utils/settings';
 
+export const MYCHAMPS_API_BASE_URL = 'https://mychamps.gg';
+
 export interface LinkResponse {
   message: string;
 }
@@ -49,22 +51,18 @@ export class MyChampsApiClient {
   private token: string;
 
   constructor(baseUrl: string, token: string) {
-    this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.baseUrl = baseUrl.trim().replace(/\/$/, '');
     this.token = token;
   }
 
   static async fromGuild(guildId: string): Promise<MyChampsApiClient> {
-    const baseUrl = await getSetting(guildId, 'mychamps-api-url');
     const token = await getSetting(guildId, 'mychamps-api-token');
 
-    if (!baseUrl) {
-      throw new Error('mychamps-api-url is not configured for this guild.');
-    }
     if (!token) {
       throw new Error('mychamps-api-token is not configured for this guild.');
     }
 
-    return new MyChampsApiClient(baseUrl, token);
+    return new MyChampsApiClient(MYCHAMPS_API_BASE_URL, token);
   }
 
   private get headers(): Record<string, string> {
