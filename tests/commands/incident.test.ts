@@ -356,7 +356,10 @@ describe('incidentCommand', () => {
       });
 
       mockPrisma.incident.update.mockResolvedValue({} as never);
-      mockGetSetting.mockResolvedValue(null);
+      mockGetSetting.mockImplementation(async (_guildId, key) => {
+        if (key === 'ticket-access-roles') return '["ticket-role-a","ticket-role-b"]';
+        return null;
+      });
 
       await incidentCommand.execute(interaction as never, client as never);
 
@@ -368,6 +371,14 @@ describe('incidentCommand', () => {
           where: { id: 1 },
           data: expect.objectContaining({ status: 'closed' }),
         }),
+      );
+      expect(mockChannel.permissionOverwrites.edit).toHaveBeenCalledWith(
+        'ticket-role-a',
+        expect.objectContaining({ ViewChannel: true, SendMessages: false }),
+      );
+      expect(mockChannel.permissionOverwrites.edit).toHaveBeenCalledWith(
+        'ticket-role-b',
+        expect.objectContaining({ ViewChannel: true, SendMessages: false }),
       );
     });
   });

@@ -1,12 +1,20 @@
 import {
   ActionRowBuilder,
+  ChannelSelectMenuBuilder,
+  ChannelType,
   ChatInputCommandInteraction,
   Client,
+  LabelBuilder,
   MessageFlags,
+  ModalBuilder,
+  ModalSubmitInteraction,
   PermissionFlagsBits,
+  RoleSelectMenuBuilder,
   SlashCommandBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuInteraction,
+  TextInputBuilder,
+  TextInputStyle,
 } from 'discord.js';
 import { BotCommand } from '../types';
 import { getSetting, setSetting } from '../utils/settings';
@@ -15,160 +23,60 @@ import { rebuildReminders } from '../utils/reminders';
 import { ephemeralReply } from '../utils/reply';
 import { MyChampsApiClient, StatsLeague } from '../services/myChampsApiClient';
 import { parseStatsLeagueIds, STATS_SETTING_KEY } from './stats';
+import {
+  getIncidentsCategoryId,
+  getTicketAccessRoleIds,
+  INCIDENTS_CATEGORY_SETTING_KEY,
+  TICKET_ACCESS_ROLES_SETTING_KEY,
+} from '../utils/incidentSettings';
+
+const SETTINGS_MODAL_CUSTOM_ID = 'settings_modal';
+
+const SETTINGS_FIELD_IDS = {
+  timezone: 'settings_timezone',
+  postTime: 'settings_post_time',
+  remindAttendees: 'settings_remind_attendees',
+  incidentReminderInterval: 'settings_incident_reminder_interval',
+  myChampsApiToken: 'settings_mychamps_api_token',
+  incidentsCategory: 'settings_incidents_category',
+  ticketAccessRoles: 'settings_ticket_access_roles',
+} as const;
+
+interface BotSettingsValues {
+  timezone: string | null;
+  postTime: string | null;
+  remindAttendees: string | null;
+  incidentReminderInterval: string | null;
+  myChampsApiToken: string | null;
+  incidentsCategory: string | null;
+  ticketAccessRoleIds: string[];
+}
 
 export const settingsCommand: BotCommand = {
   data: new SlashCommandBuilder()
     .setName('settings')
     .setDescription('Create and manage settings for your server')
-    .addSubcommand((sub) =>
-      sub
-        .setName('timezone')
-        .setDescription('Set the timezone')
-        .addStringOption((opt) =>
-          opt
-            .setName('value')
-            .setDescription('IANA identifier, e.g. Africa/Johannesburg')
-            .setRequired(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName('post-time')
-        .setDescription('Set how many days before an event the attendance bot should post')
-        .addIntegerOption((opt) =>
-          opt.setName('days').setDescription('Days before the event').setRequired(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName('remind-attendees')
-        .setDescription('Set reminder frequency for attendees')
-        .addIntegerOption((opt) =>
-          opt
-            .setName('hours')
-            .setDescription('Reminder frequency in hours (0 to disable)')
-            .setRequired(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName('incident-category')
-        .setDescription('Set the Discord category for incident channels')
-        .addChannelOption((opt) =>
-          opt.setName('channel').setDescription('Discord category channel').setRequired(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName('steward-role')
-        .setDescription('Set the steward notification role')
-        .addRoleOption((opt) =>
-          opt
-            .setName('role')
-            .setDescription('Role to tag for steward notifications')
-            .setRequired(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName('incident-reminder-interval')
-        .setDescription('Set hours between incident reminders')
-        .addIntegerOption((opt) =>
-          opt.setName('hours').setDescription('Hours between reminders').setRequired(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub
-        .setName('mychamps-api-token')
-        .setDescription('Set the API token for MyChamps')
-        .addStringOption((opt) =>
-          opt.setName('value').setDescription('API token for MyChamps').setRequired(true),
-        ),
-    )
-    .addSubcommand((sub) =>
-      sub.setName('stats').setDescription('Choose the MyChamps leagues returned by /stats'),
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addStringOption((opt) =>
+      opt
+        .setName('section')
+        .setDescription('Open a specific settings section')
+        .setRequired(false)
+        .addChoices({ name: '/stats leagues', value: 'stats' }),
     ),
 
   async execute(interaction: ChatInputCommandInteraction, _client: Client) {
     const guildId = interaction.guildId!;
 
     try {
-      const subcommand = interaction.options.getSubcommand();
+      const section = interaction.options.getString('section');
 
-      if (subcommand === 'timezone') {
-        const timezone = interaction.options.getString('value', true);
-        if (!isValidTimezone(timezone)) {
-          await ephemeralReply(interaction, `Invalid timezone: ${timezone}`);
-          return;
-        }
-        await saveSettingAndReply(interaction, guildId, 'timezone', timezone);
-        return;
-      }
-
-      if (subcommand === 'post-time') {
-        await saveSettingAndReply(
-          interaction,
-          guildId,
-          'post-time',
-          interaction.options.getInteger('days', true).toString(),
-        );
-        return;
-      }
-
-      if (subcommand === 'remind-attendees') {
-        const remindAttendees = interaction.options.getInteger('hours', true).toString();
-        await setSetting(guildId, 'remind-attendees', remindAttendees);
-        await rebuildReminders(guildId);
-        await ephemeralReply(interaction, 'Settings updated successfully.');
-        return;
-      }
-
-      if (subcommand === 'incident-category') {
-        await saveSettingAndReply(
-          interaction,
-          guildId,
-          'incident-category',
-          interaction.options.getChannel('channel', true).id,
-        );
-        return;
-      }
-
-      if (subcommand === 'steward-role') {
-        await saveSettingAndReply(
-          interaction,
-          guildId,
-          'steward-role',
-          interaction.options.getRole('role', true).id,
-        );
-        return;
-      }
-
-      if (subcommand === 'incident-reminder-interval') {
-        await saveSettingAndReply(
-          interaction,
-          guildId,
-          'incident-reminder-interval',
-          interaction.options.getInteger('hours', true).toString(),
-        );
-        return;
-      }
-
-      if (subcommand === 'mychamps-api-token') {
-        await saveSettingAndReply(
-          interaction,
-          guildId,
-          'mychamps-api-token',
-          interaction.options.getString('value', true),
-        );
-        return;
-      }
-
-      if (subcommand === 'stats') {
+      if (section === 'stats') {
         await handleStatsSettings(interaction);
         return;
       }
 
-      await ephemeralReply(interaction, 'Unknown settings command.');
+      await handleSettingsModal(interaction, guildId);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'An error occurred';
       console.log('Settings update:', message);
@@ -177,21 +85,278 @@ export const settingsCommand: BotCommand = {
   },
 };
 
-async function saveSettingAndReply(
+async function handleSettingsModal(
   interaction: ChatInputCommandInteraction,
   guildId: string,
-  key: string,
-  value: string,
 ): Promise<void> {
-  await setSetting(guildId, key, value);
-  await ephemeralReply(interaction, 'Settings updated successfully.');
+  if (!canManageSettings(interaction)) {
+    await interaction.reply({
+      content: 'You need Administrator or Manage Guild permissions to use this command.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const values = await getBotSettingsValues(guildId);
+  const modal = buildSettingsModal(values);
+
+  await interaction.showModal(modal);
+
+  let modalSubmit: ModalSubmitInteraction;
+  try {
+    modalSubmit = await interaction.awaitModalSubmit({
+      filter: (i) => i.customId === SETTINGS_MODAL_CUSTOM_ID && i.user.id === interaction.user.id,
+      time: 300_000,
+    });
+  } catch {
+    return;
+  }
+
+  await modalSubmit.deferReply({ flags: MessageFlags.Ephemeral });
+
+  try {
+    await saveSettingsFromModal(guildId, modalSubmit);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Settings could not be saved.';
+    await modalSubmit.editReply({ content: message });
+    return;
+  }
+
+  await modalSubmit.editReply({ content: 'Settings updated successfully.' });
+}
+
+function canManageSettings(interaction: ChatInputCommandInteraction): boolean {
+  return Boolean(
+    interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
+    interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild),
+  );
+}
+
+async function getBotSettingsValues(guildId: string): Promise<BotSettingsValues> {
+  const [
+    timezone,
+    postTime,
+    remindAttendees,
+    incidentReminderInterval,
+    myChampsApiToken,
+    incidentsCategory,
+    ticketAccessRoleIds,
+  ] = await Promise.all([
+    getSetting(guildId, 'timezone'),
+    getSetting(guildId, 'post-time'),
+    getSetting(guildId, 'remind-attendees'),
+    getSetting(guildId, 'incident-reminder-interval'),
+    getSetting(guildId, 'mychamps-api-token'),
+    getIncidentsCategoryId(guildId),
+    getTicketAccessRoleIds(guildId),
+  ]);
+
+  return {
+    timezone,
+    postTime,
+    remindAttendees,
+    incidentReminderInterval,
+    myChampsApiToken,
+    incidentsCategory,
+    ticketAccessRoleIds,
+  };
+}
+
+function buildSettingsModal(values: BotSettingsValues): ModalBuilder {
+  const categorySelect = new ChannelSelectMenuBuilder()
+    .setCustomId(SETTINGS_FIELD_IDS.incidentsCategory)
+    .setPlaceholder('Select an incident category')
+    .setChannelTypes(ChannelType.GuildCategory)
+    .setMinValues(0)
+    .setMaxValues(1)
+    .setRequired(false);
+
+  if (values.incidentsCategory) {
+    categorySelect.setDefaultChannels(values.incidentsCategory);
+  }
+
+  const ticketAccessRoleSelect = new RoleSelectMenuBuilder()
+    .setCustomId(SETTINGS_FIELD_IDS.ticketAccessRoles)
+    .setPlaceholder('Select ticket access roles')
+    .setMinValues(0)
+    .setMaxValues(25)
+    .setRequired(false);
+
+  if (values.ticketAccessRoleIds.length > 0) {
+    ticketAccessRoleSelect.setDefaultRoles(...values.ticketAccessRoleIds);
+  }
+
+  return new ModalBuilder()
+    .setCustomId(SETTINGS_MODAL_CUSTOM_ID)
+    .setTitle('Bot Settings')
+    .addLabelComponents(
+      textInputLabel({
+        customId: SETTINGS_FIELD_IDS.timezone,
+        label: 'Timezone',
+        description: 'IANA timezone, e.g. Europe/Berlin',
+        value: values.timezone,
+      }),
+      textInputLabel({
+        customId: SETTINGS_FIELD_IDS.postTime,
+        label: 'Post Time',
+        description: 'Days before an event to post attendance',
+        value: values.postTime,
+      }),
+      textInputLabel({
+        customId: SETTINGS_FIELD_IDS.remindAttendees,
+        label: 'Reminder Frequency',
+        description: 'Hours between attendee reminders; 0 disables reminders',
+        value: values.remindAttendees,
+      }),
+      textInputLabel({
+        customId: SETTINGS_FIELD_IDS.incidentReminderInterval,
+        label: 'Incident Reminder Interval',
+        description: 'Hours between incident reminders',
+        value: values.incidentReminderInterval,
+      }),
+      textInputLabel({
+        customId: SETTINGS_FIELD_IDS.myChampsApiToken,
+        label: 'MyChamps API Token',
+        value: values.myChampsApiToken,
+        maxLength: 1000,
+      }),
+      new LabelBuilder()
+        .setLabel('Incidents Category')
+        .setDescription('Category where incident channels are created')
+        .setChannelSelectMenuComponent(categorySelect),
+      new LabelBuilder()
+        .setLabel('Ticket Access Roles')
+        .setDescription('Roles that can view and review incident tickets')
+        .setRoleSelectMenuComponent(ticketAccessRoleSelect),
+    );
+}
+
+function textInputLabel({
+  customId,
+  label,
+  description,
+  value,
+  maxLength = 100,
+}: {
+  customId: string;
+  label: string;
+  description?: string;
+  value: string | null;
+  maxLength?: number;
+}): LabelBuilder {
+  const input = new TextInputBuilder()
+    .setCustomId(customId)
+    .setLabel(label)
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false)
+    .setMaxLength(maxLength);
+
+  if (value) {
+    input.setValue(value);
+  }
+
+  const labelBuilder = new LabelBuilder().setLabel(label).setTextInputComponent(input);
+
+  if (description) {
+    labelBuilder.setDescription(description);
+  }
+
+  return labelBuilder;
+}
+
+async function saveSettingsFromModal(
+  guildId: string,
+  modalSubmit: ModalSubmitInteraction,
+): Promise<void> {
+  const timezone = cleanModalText(
+    modalSubmit.fields.getTextInputValue(SETTINGS_FIELD_IDS.timezone),
+  );
+  const postTime = cleanModalText(
+    modalSubmit.fields.getTextInputValue(SETTINGS_FIELD_IDS.postTime),
+  );
+  const remindAttendees = cleanModalText(
+    modalSubmit.fields.getTextInputValue(SETTINGS_FIELD_IDS.remindAttendees),
+  );
+  const incidentReminderInterval = cleanModalText(
+    modalSubmit.fields.getTextInputValue(SETTINGS_FIELD_IDS.incidentReminderInterval),
+  );
+  const myChampsApiToken = cleanModalText(
+    modalSubmit.fields.getTextInputValue(SETTINGS_FIELD_IDS.myChampsApiToken),
+  );
+  const incidentCategoryId = modalSubmit.fields
+    .getSelectedChannels(SETTINGS_FIELD_IDS.incidentsCategory, false, [ChannelType.GuildCategory])
+    ?.first()?.id;
+  const ticketAccessRoleIds = Array.from(
+    modalSubmit.fields.getSelectedRoles(SETTINGS_FIELD_IDS.ticketAccessRoles)?.keys() ?? [],
+  );
+
+  const settingWrites: Array<Promise<void>> = [];
+
+  if (timezone) {
+    if (!isValidTimezone(timezone)) {
+      throw new Error(`Invalid timezone: ${timezone}`);
+    }
+    settingWrites.push(setSetting(guildId, 'timezone', timezone));
+  }
+
+  if (postTime) {
+    settingWrites.push(setSetting(guildId, 'post-time', parseModalInteger(postTime, 'Post Time')));
+  }
+
+  if (remindAttendees) {
+    settingWrites.push(
+      setSetting(
+        guildId,
+        'remind-attendees',
+        parseModalInteger(remindAttendees, 'Reminder Frequency'),
+      ),
+    );
+  }
+
+  if (incidentReminderInterval) {
+    settingWrites.push(
+      setSetting(
+        guildId,
+        'incident-reminder-interval',
+        parseModalInteger(incidentReminderInterval, 'Incident Reminder Interval'),
+      ),
+    );
+  }
+
+  if (myChampsApiToken) {
+    settingWrites.push(setSetting(guildId, 'mychamps-api-token', myChampsApiToken));
+  }
+
+  settingWrites.push(setSetting(guildId, INCIDENTS_CATEGORY_SETTING_KEY, incidentCategoryId ?? ''));
+  settingWrites.push(
+    setSetting(guildId, TICKET_ACCESS_ROLES_SETTING_KEY, JSON.stringify(ticketAccessRoleIds)),
+  );
+
+  await Promise.all(settingWrites);
+
+  if (remindAttendees) {
+    await rebuildReminders(guildId);
+  }
+}
+
+function cleanModalText(value: string): string | null {
+  const cleaned = value.trim();
+
+  return cleaned === '' ? null : cleaned;
+}
+
+function parseModalInteger(value: string, label: string): string {
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${label} must be a whole number greater than or equal to 0.`);
+  }
+
+  return parsed.toString();
 }
 
 async function handleStatsSettings(interaction: ChatInputCommandInteraction): Promise<void> {
-  if (
-    !interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) &&
-    !interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)
-  ) {
+  if (!canManageSettings(interaction)) {
     await interaction.reply({
       content: 'You need Administrator or Manage Guild permissions to use this command.',
       flags: MessageFlags.Ephemeral,
