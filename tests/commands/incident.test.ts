@@ -120,12 +120,10 @@ describe('incidentCommand', () => {
 
       expect(interaction.reply).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: expect.stringContaining('Failed to fetch championships'),
-        }),
-      );
-      expect(interaction.reply).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: expect.stringContaining('no API URL setting is required'),
+          content: [
+            'Failed to fetch championships from MyChamps API.',
+            'Check that `mychamps-api-token` is valid and that your Discord account is linked on MyChamps.',
+          ].join('\n'),
         }),
       );
     });

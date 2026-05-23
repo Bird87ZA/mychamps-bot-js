@@ -20,7 +20,9 @@ const helpSections: Record<string, { title: string; content: string }> = {
       '`/schedule` - Schedule events linked to a channel',
       '`/attendance` - Configure attendance tracking',
       '`/settings` - Manage server settings (timezone, post-time, reminders)',
+      '`/link` - Link your Discord account to MyChamps',
       '`/stats` - Show your MyChamps stats for configured leagues',
+      '`/incident` - Set up and manage incident reports',
       '`/randomiser` - Create random selection tools',
       '`/help` - Show this help message',
       '',
@@ -67,6 +69,59 @@ const helpSections: Record<string, { title: string; content: string }> = {
       '`/settings stats` - Choose the leagues returned by `/stats`',
     ].join('\n'),
   },
+  link: {
+    title: 'Link MyChamps Account',
+    content: [
+      '**On MyChamps:**',
+      '1. Log in at https://mychamps.gg with the account that owns or races in your championships.',
+      '2. Open your profile page and find the **Gamer Profiles** section.',
+      '3. Click **Discord** and approve the Discord connection.',
+      '4. Back on MyChamps, check that Discord appears under **Connected Accounts** as **Verified**.',
+      '5. If MyChamps shows matching drivers, click **Link** next to your driver so your stats can be matched.',
+      '',
+      '**In Discord:**',
+      '1. Run `/link email email:you@example.com` using the same email as your MyChamps account.',
+      '2. Check that inbox for the verification code from MyChamps.',
+      '3. Run `/link verify code:123456` with the code from the email.',
+      '4. Run `/link status` to confirm the bot can see your championships.',
+      '',
+      'After this, `/stats` and `/incident setup` can use your linked MyChamps account.',
+    ].join('\n'),
+  },
+  stats: {
+    title: 'Stats Command',
+    content: [
+      '`/stats` shows your MyChamps driver stats for the leagues configured on this Discord server.',
+      '',
+      '**Before users run `/stats`:**',
+      '1. An admin must set `mychamps-api-token` with `/settings mychamps-api-token`.',
+      '2. An admin must run `/settings stats` and choose the MyChamps leagues to include.',
+      '3. Each user must link Discord on MyChamps and link their matching driver in **Gamer Profiles**.',
+      '',
+      '**What users see:**',
+      '- Stats are grouped by configured league, with a combined total at the bottom.',
+      '- The bot shows entries, wins, podiums, poles, DNFs, and fastest laps.',
+      '- If no stats appear, check `/link status` and confirm the MyChamps profile is linked to a driver.',
+    ].join('\n'),
+  },
+  incidents: {
+    title: 'Incidents',
+    content: [
+      'Incidents let drivers submit reports from Discord and give stewards a private review channel.',
+      '',
+      '**Setup:**',
+      '1. Set `mychamps-api-token` with `/settings mychamps-api-token`.',
+      '2. Optional: set `/settings incident-category`, `/settings steward-role`, and `/settings incident-reminder-interval`.',
+      '3. A server admin or Manage Guild user runs `/incident setup`.',
+      '4. Select the MyChamps championship, then choose the report button label and color.',
+      '',
+      '**Reporting and review:**',
+      '- Drivers click the posted report button and enter involved driver names, a description, and optional evidence URL.',
+      '- The bot creates a private incident channel for the reporter, bot, and steward role if configured.',
+      '- Stewards review the channel and run `/incident close` in that incident channel.',
+      '- Closing supports Penalty, Warning, or No Further Action, with a verdict description and optional penalty value.',
+    ].join('\n'),
+  },
   randomiser: {
     title: 'Randomiser Command',
     content: [
@@ -105,12 +160,28 @@ export const helpCommand: BotCommand = {
         .setLabel('Settings')
         .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
+        .setCustomId('help!link')
+        .setLabel('Link MyChamps')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
         .setCustomId('help!randomiser')
         .setLabel('Randomiser')
         .setStyle(ButtonStyle.Primary),
     );
 
-    await interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
+    const moreRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId('help!stats').setLabel('Stats').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('help!incidents')
+        .setLabel('Incidents')
+        .setStyle(ButtonStyle.Primary),
+    );
+
+    await interaction.reply({
+      embeds: [embed],
+      components: [row, moreRow],
+      flags: MessageFlags.Ephemeral,
+    });
   },
 };
 
