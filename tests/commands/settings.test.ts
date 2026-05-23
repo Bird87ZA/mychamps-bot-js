@@ -27,17 +27,19 @@ beforeEach(() => {
 });
 
 function createSettingsModalSubmit({
+  customId = 'settings_modal',
   textValues,
   incidentsCategoryId,
   ticketAccessRoleIds = [],
 }: {
+  customId?: string;
   textValues: Record<string, string>;
   incidentsCategoryId?: string;
   ticketAccessRoleIds?: string[];
 }) {
   return {
     user: { id: 'user1' },
-    customId: 'settings_modal',
+    customId,
     deferReply: vi.fn(),
     editReply: vi.fn(),
     fields: {
@@ -59,13 +61,19 @@ describe('settingsCommand', () => {
     expect(settingsCommand.data.name).toBe('settings');
   });
 
-  it('opens settings directly and keeps stats as an optional section', () => {
+  it('opens settings directly and keeps optional settings sections', () => {
     const json = settingsCommand.data.toJSON();
     const optionNames = json.options?.map((o: { name: string }) => o.name) ?? [];
+    const sectionOption = json.options?.find(
+      (option: { name: string }) => option.name === 'section',
+    ) as { choices?: Array<{ value: string }> } | undefined;
 
     expect(optionNames).not.toContain('mychamps-api-url');
     expect(optionNames).not.toContain('mychamps-api-token');
     expect(optionNames).toContain('section');
+    expect(sectionOption?.choices?.map((choice) => choice.value)).toEqual(
+      expect.arrayContaining(['stats', 'incidents']),
+    );
   });
 
   it('rejects settings modal for non-admin users', async () => {
@@ -118,6 +126,7 @@ describe('settingsCommand', () => {
     )?.component;
 
     expect(modalJson.custom_id).toBe('settings_modal');
+    expect(modalJson.components).toHaveLength(5);
     expect(timezoneComponent).not.toHaveProperty('label');
     expect(modalJson.components).toEqual(
       expect.arrayContaining([
@@ -128,6 +137,48 @@ describe('settingsCommand', () => {
             value: 'Europe/Berlin',
           }),
         }),
+      ]),
+    );
+    expect(modalJson.components).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'Incidents Category' }),
+        expect.objectContaining({ label: 'Ticket Access Roles' }),
+      ]),
+    );
+  });
+
+  it('shows incident settings modal with saved settings', async () => {
+    const interaction = createMockInteraction({
+      memberPermissions: {
+        has: vi.fn((perm) => perm === PermissionFlagsBits.ManageGuild),
+      },
+      showModal: vi.fn(),
+      awaitModalSubmit: vi.fn().mockRejectedValue(new Error('timeout')),
+    });
+    interaction.options.getString.mockImplementation((name: string) => {
+      if (name === 'section') return 'incidents';
+      return null;
+    });
+    const client = createMockClient();
+    mockGetSetting.mockImplementation(async (_guildId, key) => {
+      const values: Record<string, string> = {
+        'incidents-category': 'category-123',
+        'ticket-access-roles': '["role-456","role-789"]',
+      };
+
+      return values[key] ?? null;
+    });
+
+    await settingsCommand.execute(interaction as never, client as never);
+
+    expect(interaction.showModal).toHaveBeenCalled();
+
+    const modalJson = interaction.showModal.mock.calls[0][0].toJSON();
+
+    expect(modalJson.custom_id).toBe('incident_settings_modal');
+    expect(modalJson.components).toHaveLength(2);
+    expect(modalJson.components).toEqual(
+      expect.arrayContaining([
         expect.objectContaining({
           label: 'Incidents Category',
           component: expect.objectContaining({ custom_id: 'settings_incidents_category' }),
@@ -153,8 +204,6 @@ describe('settingsCommand', () => {
         settings_incident_reminder_interval: '12',
         settings_mychamps_api_token: 'super-secret-token-abc',
       },
-      incidentsCategoryId: 'cat-channel-id-111',
-      ticketAccessRoleIds: ['role-id-222', 'role-id-333'],
     });
 
     const interaction = createMockInteraction({
@@ -179,6 +228,48 @@ describe('settingsCommand', () => {
       'mychamps-api-token',
       'super-secret-token-abc',
     );
+    expect(setSetting).not.toHaveBeenCalledWith(
+      '123456789',
+      'incidents-category',
+      expect.anything(),
+    );
+    expect(setSetting).not.toHaveBeenCalledWith(
+      '123456789',
+      'ticket-access-roles',
+      expect.anything(),
+    );
+    expect(rebuildReminders).toHaveBeenCalledWith('123456789');
+    expect(modalSubmit.editReply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'Settings updated successfully.' }),
+    );
+  });
+
+  it('saves incident settings from modal submission', async () => {
+    const { rebuildReminders } = await import('../../src/utils/reminders');
+    const modalSubmit = createSettingsModalSubmit({
+      customId: 'incident_settings_modal',
+      textValues: {},
+      incidentsCategoryId: 'cat-channel-id-111',
+      ticketAccessRoleIds: ['role-id-222', 'role-id-333'],
+    });
+
+    const interaction = createMockInteraction({
+      memberPermissions: {
+        has: vi.fn((perm) => perm === PermissionFlagsBits.ManageGuild),
+      },
+      showModal: vi.fn(),
+      awaitModalSubmit: vi.fn().mockResolvedValue(modalSubmit),
+    });
+    interaction.options.getString.mockImplementation((name: string) => {
+      if (name === 'section') return 'incidents';
+      return null;
+    });
+    const client = createMockClient();
+    mockGetSetting.mockResolvedValue(null);
+
+    await settingsCommand.execute(interaction as never, client as never);
+
+    expect(setSetting).toHaveBeenCalledTimes(2);
     expect(setSetting).toHaveBeenCalledWith(
       '123456789',
       'incidents-category',
@@ -189,9 +280,9 @@ describe('settingsCommand', () => {
       'ticket-access-roles',
       '["role-id-222","role-id-333"]',
     );
-    expect(rebuildReminders).toHaveBeenCalledWith('123456789');
+    expect(rebuildReminders).not.toHaveBeenCalled();
     expect(modalSubmit.editReply).toHaveBeenCalledWith(
-      expect.objectContaining({ content: 'Settings updated successfully.' }),
+      expect.objectContaining({ content: 'Incident settings updated successfully.' }),
     );
   });
 
