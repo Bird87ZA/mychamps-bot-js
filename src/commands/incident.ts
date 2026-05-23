@@ -18,7 +18,7 @@ import {
 import { BotCommand } from '../types';
 import { prisma } from '../database';
 import { ChampionshipSummary, MyChampsApiClient } from '../services/myChampsApiClient';
-import { getSetting } from '../utils/settings';
+import { getTicketAccessRoleIds } from '../utils/incidentSettings';
 
 const BUTTON_COLOR_MAP: Record<string, ButtonStyle> = {
   Primary: ButtonStyle.Primary,
@@ -409,7 +409,7 @@ async function handleClose(
   }
 
   // Post verdict embed in the channel
-  const stewardRoleId = await getSetting(guildId, 'steward-role');
+  const ticketAccessRoleIds = await getTicketAccessRoleIds(guildId);
   const embed = new EmbedBuilder()
     .setTitle('Incident Closed')
     .addFields(
@@ -429,8 +429,8 @@ async function handleClose(
       await channel.permissionOverwrites.edit(interaction.guild!.roles.everyone, {
         SendMessages: false,
       });
-      if (stewardRoleId) {
-        await channel.permissionOverwrites.edit(stewardRoleId, {
+      for (const roleId of ticketAccessRoleIds) {
+        await channel.permissionOverwrites.edit(roleId, {
           ViewChannel: true,
           SendMessages: false,
         });

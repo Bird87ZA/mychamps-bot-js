@@ -60,7 +60,7 @@ describe('helpCommand', () => {
   });
 
   it('documents stats setup and output', () => {
-    expect(helpSections.stats.content).toContain('/settings stats');
+    expect(helpSections.stats.content).toContain('/settings section: stats');
     expect(helpSections.stats.content).toContain('Gamer Profiles');
     expect(helpSections.stats.content).toContain('entries, wins, podiums, poles, DNFs');
     expect(helpSections.stats.content).toContain('/link status');
@@ -68,8 +68,8 @@ describe('helpCommand', () => {
 
   it('documents incident setup and review flow', () => {
     expect(helpSections.incidents.content).toContain('/incident setup');
-    expect(helpSections.incidents.content).toContain('/settings incident-category');
-    expect(helpSections.incidents.content).toContain('/settings steward-role');
+    expect(helpSections.incidents.content).toContain('incidents-category');
+    expect(helpSections.incidents.content).toContain('ticket-access-roles');
     expect(helpSections.incidents.content).toContain('/incident close');
     expect(helpSections.incidents.content).toContain('Penalty, Warning, or No Further Action');
   });

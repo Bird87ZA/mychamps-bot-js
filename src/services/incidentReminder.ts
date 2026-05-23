@@ -2,6 +2,7 @@ import { Client, TextChannel } from 'discord.js';
 import { prisma } from '../database';
 import { ServiceInterval } from '../types';
 import { getSetting } from '../utils/settings';
+import { formatRoleMentions, getTicketAccessRoleIds } from '../utils/incidentSettings';
 
 const DEFAULT_REMINDER_INTERVAL_HOURS = 24;
 
@@ -56,9 +57,8 @@ export const incidentReminderService: ServiceInterval = {
 
         if (!channel) continue;
 
-        // Fetch steward role for this guild
-        const stewardRoleId = await getSetting(incident.guildId, 'steward-role');
-        const mention = stewardRoleId ? `<@&${stewardRoleId}>` : 'Stewards';
+        const ticketAccessRoleIds = await getTicketAccessRoleIds(incident.guildId);
+        const mention = formatRoleMentions(ticketAccessRoleIds);
 
         await channel.send(
           `${mention} Reminder: This incident is still awaiting your review. Please close it using \`/incident close\`.`,
