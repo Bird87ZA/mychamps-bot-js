@@ -128,10 +128,11 @@ describe('incidentCommand', () => {
       );
     });
 
-    it('shows championship select menu with team-prefixed labels in setup order', async () => {
+    it('shows newest championship per team with team-prefixed labels in setup order', async () => {
       const championships = [
         {
           id: 1,
+          team_id: 2,
           name: 'Championship 1',
           slug: 'team-b-champ-1',
           team_name: 'Team B',
@@ -139,6 +140,7 @@ describe('incidentCommand', () => {
         },
         {
           id: 2,
+          team_id: 1,
           name: 'Championship 1',
           slug: 'team-a-champ-1',
           team_name: 'Team A',
@@ -146,6 +148,7 @@ describe('incidentCommand', () => {
         },
         {
           id: 3,
+          team_id: 2,
           name: 'Championship 3',
           slug: 'team-b-champ-3',
           team_name: 'Team B',
@@ -153,6 +156,7 @@ describe('incidentCommand', () => {
         },
         {
           id: 4,
+          team_id: 1,
           name: 'Championship 3',
           slug: 'team-a-champ-3',
           team_name: 'Team A',
@@ -160,6 +164,7 @@ describe('incidentCommand', () => {
         },
         {
           id: 5,
+          team_id: 2,
           name: 'Championship 2',
           slug: 'team-b-champ-2',
           team_name: 'Team B',
@@ -167,6 +172,7 @@ describe('incidentCommand', () => {
         },
         {
           id: 6,
+          team_id: 1,
           name: 'Championship 2',
           slug: 'team-a-champ-2',
           team_name: 'Team A',
@@ -222,20 +228,9 @@ describe('incidentCommand', () => {
 
       expect(options.map((option) => option.label)).toEqual([
         'Team A - Championship 3',
-        'Team A - Championship 2',
-        'Team A - Championship 1',
         'Team B - Championship 3',
-        'Team B - Championship 2',
-        'Team B - Championship 1',
       ]);
-      expect(options.map((option) => option.value)).toEqual([
-        'team-a-champ-3',
-        'team-a-champ-2',
-        'team-a-champ-1',
-        'team-b-champ-3',
-        'team-b-champ-2',
-        'team-b-champ-1',
-      ]);
+      expect(options.map((option) => option.value)).toEqual(['team-a-champ-3', 'team-b-champ-3']);
       expect(mockSelectInteraction.showModal).toHaveBeenCalled();
     });
   });

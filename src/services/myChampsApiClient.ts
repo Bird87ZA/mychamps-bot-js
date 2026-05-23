@@ -34,6 +34,7 @@ export interface LinkedStatsResponse {
 
 export interface ChampionshipSummary {
   id: number;
+  team_id: number;
   name: string;
   slug: string;
   team_name?: string;

@@ -61,6 +61,28 @@ function formatChampionshipOptionLabel(championship: ChampionshipSummary): strin
     : championshipName;
 }
 
+function getChampionshipTeamKey(championship: ChampionshipSummary): string {
+  return String(championship.team_id ?? championship.team_name ?? championship.slug);
+}
+
+function newestChampionshipPerTeam(
+  sortedChampionships: ChampionshipSummary[],
+): ChampionshipSummary[] {
+  const seenTeams = new Set<string>();
+
+  return sortedChampionships.filter((championship) => {
+    const teamKey = getChampionshipTeamKey(championship);
+
+    if (seenTeams.has(teamKey)) {
+      return false;
+    }
+
+    seenTeams.add(teamKey);
+
+    return true;
+  });
+}
+
 export const incidentCommand: BotCommand = {
   data: new SlashCommandBuilder()
     .setName('incident')
@@ -143,7 +165,8 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
   }
 
   const sortedChampionships = championships.slice().sort(compareChampionshipsForSetup);
-  const options = sortedChampionships.slice(0, 25).map((c) => ({
+  const newestChampionships = newestChampionshipPerTeam(sortedChampionships);
+  const options = newestChampionships.slice(0, 25).map((c) => ({
     label: formatChampionshipOptionLabel(c),
     value: c.slug,
   }));
@@ -179,7 +202,7 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
   }
 
   const selectedSlug = selectInteraction.values[0];
-  const selectedChampionship = sortedChampionships.find((c) => c.slug === selectedSlug);
+  const selectedChampionship = newestChampionships.find((c) => c.slug === selectedSlug);
 
   // Show modal to get button label and color
   const modal = new ModalBuilder()
