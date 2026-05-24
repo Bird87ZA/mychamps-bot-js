@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { MessageFlags } from 'discord.js';
 import { statsCommand, parseStatsLeagueIds } from '../../src/commands/stats';
 import { createMockInteraction, createMockClient } from '../mocks/discord';
 
@@ -127,9 +128,13 @@ describe('statsCommand', () => {
 
     await statsCommand.execute(interaction as never, client as never);
 
-    expect(interaction.editReply).toHaveBeenCalledWith(
+    expect(interaction.deleteReply).toHaveBeenCalled();
+    expect(interaction.followUp).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: expect.stringContaining('No stats found'),
+        content: expect.stringContaining(
+          'Your account is not yet linked with MyChamps. Head over to https://mychamps.gg/user/profile and link your Social Accounts',
+        ),
+        flags: MessageFlags.Ephemeral,
       }),
     );
   });
