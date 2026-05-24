@@ -31,6 +31,7 @@ export function createMockInteraction(overrides: Record<string, unknown> = {}) {
     reply: vi.fn(),
     followUp: vi.fn(),
     deferReply: vi.fn(),
+    deleteReply: vi.fn(),
     update: vi.fn(),
     editReply: vi.fn(),
     isChatInputCommand: vi.fn(() => true),

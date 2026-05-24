@@ -64,9 +64,11 @@ export const statsCommand: BotCommand = {
     }
 
     if (stats.leagues.length === 0 && stats.combined.entries === 0) {
-      await interaction.editReply({
+      await interaction.deleteReply();
+      await interaction.followUp({
         content:
-          'No stats found for your linked MyChamps profile in the leagues configured for this server.',
+          'Your account is not yet linked with MyChamps. Head over to https://mychamps.gg/user/profile and link your Social Accounts',
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
