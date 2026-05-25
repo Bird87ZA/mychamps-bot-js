@@ -350,6 +350,93 @@ describe('incidentCommand', () => {
         expect.objectContaining({ content: expect.stringContaining('posted successfully') }),
       );
     });
+
+    it('explains missing channel permissions when setup message cannot be posted', async () => {
+      const championships = [{ name: 'Championship A', slug: 'champ-a' }];
+      const mockSend = vi.fn().mockRejectedValue({ code: 50001 });
+      const mockRolesModalSubmit = {
+        fields: {
+          getSelectedRoles: vi.fn((field: string) => {
+            if (field === 'incident_setup_steward_roles') {
+              return new Map([['steward-role-a', { id: 'steward-role-a' }]]);
+            }
+            return new Map();
+          }),
+        },
+        deferReply: vi.fn(),
+        editReply: vi.fn(),
+        user: { id: 'user1' },
+      };
+      const mockContinueInteraction = {
+        customId: 'incident_setup_continue',
+        user: { id: 'user1' },
+        showModal: vi.fn(),
+        awaitModalSubmit: vi.fn().mockResolvedValue(mockRolesModalSubmit),
+      };
+      const mockContinueMessage = {
+        awaitMessageComponent: vi.fn().mockResolvedValue(mockContinueInteraction),
+      };
+      const mockModalSubmit = {
+        fields: {
+          getStringSelectValues: vi.fn((field: string) => {
+            if (field === 'incident_setup_championship') return ['champ-a'];
+            if (field === 'incident_setup_button_color') return ['Grey'];
+            return [];
+          }),
+          getTextInputValue: vi.fn((field: string) => {
+            if (field === 'incident_setup_button_label') return 'Report Race Incident';
+            if (field === 'incident_setup_button_message') return 'Use this custom intro.';
+            return '';
+          }),
+          getSelectedChannels: vi.fn(
+            () => new Map([['incident-category-id', { id: 'incident-category-id' }]]),
+          ),
+        },
+        deferReply: vi.fn(),
+        editReply: vi.fn().mockResolvedValue(mockContinueMessage),
+        user: { id: 'user1' },
+      };
+      const interaction = createMockInteraction({
+        memberPermissions: {
+          has: vi.fn((perm) => perm === PermissionFlagsBits.Administrator),
+        },
+        channel: {
+          type: 0,
+          id: '987654321',
+          send: mockSend,
+        },
+        showModal: vi.fn(),
+        awaitModalSubmit: vi.fn().mockResolvedValue(mockModalSubmit),
+      });
+      interaction.options.getSubcommand.mockReturnValue('setup');
+      const client = createMockClient();
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      mockFromGuild.mockResolvedValue({
+        getChampionships: vi.fn().mockResolvedValue(championships),
+      } as never);
+
+      await incidentCommand.execute(interaction as never, client as never);
+
+      expect(mockPrisma.incidentButton.create).not.toHaveBeenCalled();
+      expect(mockRolesModalSubmit.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('View Channel'),
+        }),
+      );
+      expect(mockRolesModalSubmit.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('Send Messages'),
+        }),
+      );
+      expect(mockRolesModalSubmit.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('Embed Links'),
+        }),
+      );
+
+      consoleSpy.mockRestore();
+    });
   });
 
   describe('close subcommand', () => {

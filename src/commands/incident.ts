@@ -346,6 +346,33 @@ function getSelectedChannelId(modalSubmit: ModalSubmitInteraction, customId: str
   return Array.from(channels.keys())[0] ?? '';
 }
 
+function isMissingAccessError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const errorWithCode = error as { code?: unknown; rawError?: { code?: unknown } };
+
+  return errorWithCode.code === 50001 || errorWithCode.rawError?.code === 50001;
+}
+
+function formatIncidentSetupPostError(channelId: string, error: unknown): string {
+  const permissionsMessage = [
+    `I couldn't post the incident report button in <#${channelId}>.`,
+    'Grant the bot `View Channel`, `Send Messages`, and `Embed Links` in that channel.',
+    'If the channel is in a private category, grant those permissions on the category or add a channel override for the bot role.',
+  ].join('\n');
+
+  if (isMissingAccessError(error)) {
+    return permissionsMessage;
+  }
+
+  return [
+    permissionsMessage,
+    'Discord rejected the message unexpectedly; check the bot role permissions and channel overrides.',
+  ].join('\n');
+}
+
 export const incidentCommand: BotCommand = {
   data: new SlashCommandBuilder()
     .setName('incident')
@@ -527,7 +554,23 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
     .setDescription(buttonMessage)
     .setColor(getEmbedColor(buttonColor));
 
-  const postedMessage = await channel.send({ embeds: [embed], components: [buttonRow] });
+  let postedMessage: Awaited<ReturnType<typeof channel.send>>;
+  try {
+    postedMessage = await channel.send({ embeds: [embed], components: [buttonRow] });
+  } catch (error) {
+    console.error('[IncidentSetup] Failed to post incident report button:', error);
+    const errorMessage = formatIncidentSetupPostError(channel.id, error);
+    await modalSubmit
+      .editReply({
+        content: errorMessage,
+        components: [],
+      })
+      .catch(() => undefined);
+    await rolesModalSubmit.editReply({
+      content: errorMessage,
+    });
+    return;
+  }
 
   // Save to database
   await prisma.incidentButton.create({
