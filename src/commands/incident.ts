@@ -5,6 +5,7 @@ import {
   ButtonStyle,
   ChannelSelectMenuBuilder,
   ChannelType,
+  CheckboxBuilder,
   ChatInputCommandInteraction,
   Client,
   ComponentType,
@@ -57,6 +58,7 @@ const SETUP_FIELD_IDS = {
   buttonMessage: 'incident_setup_button_message',
   stewardRoles: 'incident_setup_steward_roles',
   channelRoles: 'incident_setup_channel_roles',
+  addReporterToChannel: 'incident_setup_add_reporter_to_channel',
   channelGroup: 'incident_setup_channel_group',
 } as const;
 
@@ -315,6 +317,10 @@ function buildIncidentSetupRolesModal(): ModalBuilder {
     .setMaxValues(25)
     .setRequired(false);
 
+  const addReporterCheckbox = new CheckboxBuilder()
+    .setCustomId(SETUP_FIELD_IDS.addReporterToChannel)
+    .setDefault(false);
+
   return new ModalBuilder()
     .setCustomId(SETUP_ROLES_MODAL_CUSTOM_ID)
     .setTitle('Incident Channel Access')
@@ -327,6 +333,10 @@ function buildIncidentSetupRolesModal(): ModalBuilder {
         .setLabel('Roles to Add to Channel')
         .setDescription('Additional roles that can view the incident channel')
         .setRoleSelectMenuComponent(channelRolesSelect),
+      new LabelBuilder()
+        .setLabel('Add reporter to channel')
+        .setDescription('Allow the person reporting an incident to view the created channel')
+        .setCheckboxComponent(addReporterCheckbox),
     );
 }
 
@@ -351,6 +361,14 @@ function getSelectedChannelId(modalSubmit: ModalSubmitInteraction, customId: str
   ]);
 
   return Array.from(channels.keys())[0] ?? '';
+}
+
+function getCheckboxValue(modalSubmit: ModalSubmitInteraction, customId: string): boolean {
+  try {
+    return modalSubmit.fields.getCheckbox(customId);
+  } catch {
+    return false;
+  }
 }
 
 function isMissingAccessError(error: unknown): boolean {
@@ -569,6 +587,10 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
 
   const stewardRoleIds = getSelectedRoleIds(rolesModalSubmit, SETUP_FIELD_IDS.stewardRoles);
   const channelRoleIds = getSelectedRoleIds(rolesModalSubmit, SETUP_FIELD_IDS.channelRoles);
+  const addReporterToChannel = getCheckboxValue(
+    rolesModalSubmit,
+    SETUP_FIELD_IDS.addReporterToChannel,
+  );
   const buttonStyle = getButtonStyle(buttonColor);
 
   // Build and post the incident button
@@ -612,6 +634,7 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
       incidentCategoryId,
       stewardRoleIds,
       channelRoleIds,
+      addReporterToChannel,
       buttonMessage,
       buttonLabel,
       buttonColor,

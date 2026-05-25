@@ -263,6 +263,7 @@ describe('incidentCommand', () => {
             }
             return new Map();
           }),
+          getCheckbox: vi.fn((field: string) => field === 'incident_setup_add_reporter_to_channel'),
         },
         deferReply: vi.fn(),
         editReply: vi.fn(),
@@ -323,7 +324,7 @@ describe('incidentCommand', () => {
       const rolesModalJson = mockContinueInteraction.showModal.mock.calls[0][0].toJSON();
       expect(
         rolesModalJson.components.map((component: { label?: string }) => component.label),
-      ).toEqual(['Stewards Role', 'Roles to Add to Channel']);
+      ).toEqual(['Stewards Role', 'Roles to Add to Channel', 'Add reporter to channel']);
       expect(mockSend).toHaveBeenCalledWith(
         expect.objectContaining({
           components: expect.any(Array),
@@ -340,6 +341,7 @@ describe('incidentCommand', () => {
             incidentCategoryId: 'incident-category-id',
             stewardRoleIds: ['steward-role-a', 'steward-role-b'],
             channelRoleIds: ['channel-role-a', 'channel-role-b'],
+            addReporterToChannel: true,
             buttonMessage: 'Use this custom intro.',
             buttonLabel: 'Report Race Incident',
             buttonColor: 'Purple',
@@ -362,6 +364,7 @@ describe('incidentCommand', () => {
             }
             return new Map();
           }),
+          getCheckbox: vi.fn(() => false),
         },
         deferReply: vi.fn(),
         editReply: vi.fn(),

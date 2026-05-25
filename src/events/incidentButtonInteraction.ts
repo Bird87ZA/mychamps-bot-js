@@ -169,6 +169,18 @@ export async function handleIncidentButtonInteraction(
   // Create private text channel
   const incidentNumber = await getNextIncidentNumber(guildId, guild);
   const channelName = `incident-${formatIncidentNumber(incidentNumber)}`;
+  const reporterAccessOverwrites =
+    incidentButton.addReporterToChannel &&
+    !selectedDriverUsers.some((user) => user.id === interaction.user.id)
+      ? [
+          {
+            id: interaction.user.id,
+            type: OverwriteType.Member as const,
+            allow: [PermissionFlagsBits.ViewChannel],
+            deny: INCIDENT_WRITE_PERMISSION_DENIES,
+          },
+        ]
+      : [];
   let incidentChannel;
   try {
     const channelOptions: GuildChannelCreateOptions = {
@@ -197,6 +209,7 @@ export async function handleIncidentButtonInteraction(
           allow: [PermissionFlagsBits.ViewChannel],
           deny: INCIDENT_WRITE_PERMISSION_DENIES,
         })),
+        ...reporterAccessOverwrites,
       ],
     };
 
