@@ -2,6 +2,7 @@ ALTER TABLE `incident_buttons`
     ADD COLUMN `incident_category_id` VARCHAR(191) NULL,
     ADD COLUMN `steward_role_ids` JSON NULL,
     ADD COLUMN `channel_role_ids` JSON NULL,
+    ADD COLUMN `add_reporter_to_channel` BOOLEAN NOT NULL DEFAULT false,
     ADD COLUMN `button_message` TEXT NULL;
 
 UPDATE `incident_buttons`
