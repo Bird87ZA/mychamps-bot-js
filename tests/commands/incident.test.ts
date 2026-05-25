@@ -221,38 +221,80 @@ describe('incidentCommand', () => {
         'Championship',
         'Button Label',
         'Button Color',
-        'Stewards Role',
+        'Button Message',
         'Channel Group',
+      ]);
+
+      const colorComponent = modalJson.components.find(
+        (component: { label?: string }) => component.label === 'Button Color',
+      )?.component as {
+        options: Array<{ label: string; value: string }>;
+      };
+      expect(colorComponent.options.map((option) => option.label)).toEqual([
+        'Blue',
+        'Grey',
+        'Green',
+        'Red',
+        'Purple',
+        'Orange',
+        'Yellow',
+        'Teal',
+        'Pink',
       ]);
     });
 
     it('posts incident button from setup modal selections', async () => {
       const championships = [{ name: 'Championship A', slug: 'champ-a' }];
       const mockSend = vi.fn().mockResolvedValue({ id: 'posted-message-id' });
+      const mockRolesModalSubmit = {
+        fields: {
+          getSelectedRoles: vi.fn((field: string) => {
+            if (field === 'incident_setup_steward_roles') {
+              return new Map([
+                ['steward-role-a', { id: 'steward-role-a' }],
+                ['steward-role-b', { id: 'steward-role-b' }],
+              ]);
+            }
+            if (field === 'incident_setup_channel_roles') {
+              return new Map([
+                ['channel-role-a', { id: 'channel-role-a' }],
+                ['channel-role-b', { id: 'channel-role-b' }],
+              ]);
+            }
+            return new Map();
+          }),
+        },
+        deferReply: vi.fn(),
+        editReply: vi.fn(),
+        user: { id: 'user1' },
+      };
+      const mockContinueInteraction = {
+        customId: 'incident_setup_continue',
+        user: { id: 'user1' },
+        showModal: vi.fn(),
+        awaitModalSubmit: vi.fn().mockResolvedValue(mockRolesModalSubmit),
+      };
+      const mockContinueMessage = {
+        awaitMessageComponent: vi.fn().mockResolvedValue(mockContinueInteraction),
+      };
       const mockModalSubmit = {
         fields: {
           getStringSelectValues: vi.fn((field: string) => {
             if (field === 'incident_setup_championship') return ['champ-a'];
-            if (field === 'incident_setup_button_color') return ['Secondary'];
+            if (field === 'incident_setup_button_color') return ['Purple'];
             return [];
           }),
           getTextInputValue: vi.fn((field: string) => {
             if (field === 'incident_setup_button_label') return 'Report Race Incident';
+            if (field === 'incident_setup_button_message') return 'Use this custom intro.';
             return '';
           }),
-          getSelectedRoles: vi.fn(
-            () =>
-              new Map([
-                ['steward-role-a', { id: 'steward-role-a' }],
-                ['steward-role-b', { id: 'steward-role-b' }],
-              ]),
-          ),
           getSelectedChannels: vi.fn(
             () => new Map([['incident-category-id', { id: 'incident-category-id' }]]),
           ),
         },
         deferReply: vi.fn(),
-        editReply: vi.fn(),
+        editReply: vi.fn().mockResolvedValue(mockContinueMessage),
         user: { id: 'user1' },
       };
       const interaction = createMockInteraction({
@@ -277,26 +319,123 @@ describe('incidentCommand', () => {
 
       await incidentCommand.execute(interaction as never, client as never);
 
+      expect(mockContinueInteraction.showModal).toHaveBeenCalled();
+      const rolesModalJson = mockContinueInteraction.showModal.mock.calls[0][0].toJSON();
+      expect(
+        rolesModalJson.components.map((component: { label?: string }) => component.label),
+      ).toEqual(['Stewards Role', 'Roles to Add to Channel']);
       expect(mockSend).toHaveBeenCalledWith(
         expect.objectContaining({
           components: expect.any(Array),
           embeds: expect.any(Array),
         }),
       );
+      const embedPayload = mockSend.mock.calls[0][0].embeds[0].data;
+      expect(embedPayload.description).toBe('Use this custom intro.');
+      expect(embedPayload.color).toBe(0x9b59b6);
       expect(mockPrisma.incidentButton.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             championshipSlug: 'champ-a',
             incidentCategoryId: 'incident-category-id',
             stewardRoleIds: ['steward-role-a', 'steward-role-b'],
+            channelRoleIds: ['channel-role-a', 'channel-role-b'],
+            buttonMessage: 'Use this custom intro.',
             buttonLabel: 'Report Race Incident',
-            buttonColor: 'Secondary',
+            buttonColor: 'Purple',
           }),
         }),
       );
-      expect(mockModalSubmit.editReply).toHaveBeenCalledWith(
+      expect(mockRolesModalSubmit.editReply).toHaveBeenCalledWith(
         expect.objectContaining({ content: expect.stringContaining('posted successfully') }),
       );
+    });
+
+    it('explains missing channel permissions when setup message cannot be posted', async () => {
+      const championships = [{ name: 'Championship A', slug: 'champ-a' }];
+      const mockSend = vi.fn().mockRejectedValue({ code: 50001 });
+      const mockRolesModalSubmit = {
+        fields: {
+          getSelectedRoles: vi.fn((field: string) => {
+            if (field === 'incident_setup_steward_roles') {
+              return new Map([['steward-role-a', { id: 'steward-role-a' }]]);
+            }
+            return new Map();
+          }),
+        },
+        deferReply: vi.fn(),
+        editReply: vi.fn(),
+        user: { id: 'user1' },
+      };
+      const mockContinueInteraction = {
+        customId: 'incident_setup_continue',
+        user: { id: 'user1' },
+        showModal: vi.fn(),
+        awaitModalSubmit: vi.fn().mockResolvedValue(mockRolesModalSubmit),
+      };
+      const mockContinueMessage = {
+        awaitMessageComponent: vi.fn().mockResolvedValue(mockContinueInteraction),
+      };
+      const mockModalSubmit = {
+        fields: {
+          getStringSelectValues: vi.fn((field: string) => {
+            if (field === 'incident_setup_championship') return ['champ-a'];
+            if (field === 'incident_setup_button_color') return ['Grey'];
+            return [];
+          }),
+          getTextInputValue: vi.fn((field: string) => {
+            if (field === 'incident_setup_button_label') return 'Report Race Incident';
+            if (field === 'incident_setup_button_message') return 'Use this custom intro.';
+            return '';
+          }),
+          getSelectedChannels: vi.fn(
+            () => new Map([['incident-category-id', { id: 'incident-category-id' }]]),
+          ),
+        },
+        deferReply: vi.fn(),
+        editReply: vi.fn().mockResolvedValue(mockContinueMessage),
+        user: { id: 'user1' },
+      };
+      const interaction = createMockInteraction({
+        memberPermissions: {
+          has: vi.fn((perm) => perm === PermissionFlagsBits.Administrator),
+        },
+        channel: {
+          type: 0,
+          id: '987654321',
+          send: mockSend,
+        },
+        showModal: vi.fn(),
+        awaitModalSubmit: vi.fn().mockResolvedValue(mockModalSubmit),
+      });
+      interaction.options.getSubcommand.mockReturnValue('setup');
+      const client = createMockClient();
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      mockFromGuild.mockResolvedValue({
+        getChampionships: vi.fn().mockResolvedValue(championships),
+      } as never);
+
+      await incidentCommand.execute(interaction as never, client as never);
+
+      expect(mockPrisma.incidentButton.create).not.toHaveBeenCalled();
+      expect(mockRolesModalSubmit.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('View Channel'),
+        }),
+      );
+      expect(mockRolesModalSubmit.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('Send Messages'),
+        }),
+      );
+      expect(mockRolesModalSubmit.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('Embed Links'),
+        }),
+      );
+
+      consoleSpy.mockRestore();
     });
   });
 

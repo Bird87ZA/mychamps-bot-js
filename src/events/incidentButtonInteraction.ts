@@ -21,7 +21,6 @@ import {
 import { prisma } from '../database';
 import { MyChampsApiClient } from '../services/myChampsApiClient';
 import {
-  formatRoleMentions,
   getIncidentsCategoryId,
   getTicketAccessRoleIds,
   parseSettingIds,
@@ -32,6 +31,14 @@ interface EvidenceFile {
   name: string;
   url: string;
 }
+
+const INCIDENT_WRITE_PERMISSION_DENIES = [
+  PermissionFlagsBits.SendMessages,
+  PermissionFlagsBits.SendMessagesInThreads,
+  PermissionFlagsBits.CreatePublicThreads,
+  PermissionFlagsBits.CreatePrivateThreads,
+  PermissionFlagsBits.AddReactions,
+];
 
 export async function handleIncidentButtonInteraction(
   interaction: ButtonInteraction,
@@ -149,9 +156,14 @@ export async function handleIncidentButtonInteraction(
   const incidentCategoryId =
     incidentButton.incidentCategoryId ?? (await getIncidentsCategoryId(guildId));
   const configuredStewardRoleIds = parseStoredRoleIds(incidentButton.stewardRoleIds);
+  const configuredChannelRoleIds = parseStoredRoleIds(incidentButton.channelRoleIds);
+  const configuredAccessRoleIds = uniqueIds([
+    ...configuredStewardRoleIds,
+    ...configuredChannelRoleIds,
+  ]);
   const ticketAccessRoleIds =
-    configuredStewardRoleIds.length > 0
-      ? configuredStewardRoleIds
+    configuredAccessRoleIds.length > 0
+      ? configuredAccessRoleIds
       : await getTicketAccessRoleIds(guildId);
 
   // Create private text channel
@@ -167,7 +179,7 @@ export async function handleIncidentButtonInteraction(
         {
           id: guild.roles.everyone.id,
           type: OverwriteType.Role,
-          deny: [PermissionFlagsBits.ViewChannel],
+          deny: [PermissionFlagsBits.ViewChannel, ...INCIDENT_WRITE_PERMISSION_DENIES],
         },
         {
           id: client.user!.id,
@@ -182,13 +194,9 @@ export async function handleIncidentButtonInteraction(
         ...selectedDriverUsers.map((user) => ({
           id: user.id,
           type: OverwriteType.Member as const,
-          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
+          allow: [PermissionFlagsBits.ViewChannel],
+          deny: INCIDENT_WRITE_PERMISSION_DENIES,
         })),
-        {
-          id: interaction.user.id,
-          type: OverwriteType.Member,
-          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
-        },
       ],
     };
 
@@ -216,22 +224,6 @@ export async function handleIncidentButtonInteraction(
     .setColor(0x95a5a6)
     .setTimestamp();
 
-  // Add the defence submission button for selected drivers.
-  const doneRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`defence_done_yes!0`)
-      .setLabel('Submit Defence')
-      .setStyle(ButtonStyle.Success),
-  );
-
-  await (incidentChannel as TextChannel).send({ embeds: [embed], components: [doneRow] });
-
-  if (selectedDriverUsers.length > 0) {
-    await (incidentChannel as TextChannel).send(
-      `${selectedDriverUsers.map((user) => `<@${user.id}>`).join(' ')} Please post a defence`,
-    );
-  }
-
   // Save local incident record
   const savedIncident = await prisma.incident.create({
     data: {
@@ -241,10 +233,34 @@ export async function handleIncidentButtonInteraction(
       mychampsIncidentId: apiIncidentId,
       championshipSlug: incidentButton.championshipSlug,
       defendants: defendants,
+      stewardRoleIds: configuredStewardRoleIds,
       status: 'open',
       defenceSubmitted: [],
     },
   });
+
+  const incidentMessageOptions =
+    selectedDriverUsers.length > 0
+      ? {
+          embeds: [embed],
+          components: [
+            new ActionRowBuilder<ButtonBuilder>().addComponents(
+              new ButtonBuilder()
+                .setCustomId(`defence_done_yes!${savedIncident.id}`)
+                .setLabel('Submit Defence')
+                .setStyle(ButtonStyle.Success),
+            ),
+          ],
+        }
+      : { embeds: [embed] };
+
+  await (incidentChannel as TextChannel).send(incidentMessageOptions);
+
+  if (selectedDriverUsers.length > 0) {
+    await (incidentChannel as TextChannel).send(
+      `${selectedDriverUsers.map((user) => `<@${user.id}>`).join(' ')} Please submit a defence`,
+    );
+  }
 
   console.log(`[IncidentReport] Created incident ${savedIncident.id} in #${channelName}`);
 
@@ -266,6 +282,10 @@ function parseStoredRoleIds(value: unknown): string[] {
   }
 
   return [];
+}
+
+function uniqueIds(ids: string[]): string[] {
+  return Array.from(new Set(ids.filter(Boolean)));
 }
 
 function formatIncidentNumber(incidentNumber: number): string {
@@ -345,93 +365,6 @@ function formatEvidenceValue(
   const value = evidenceLinks.join('\n');
 
   return value.length > 1024 ? value.slice(0, 1021) + '...' : value;
-}
-
-export async function handleIncidentDefenceButtonInteraction(
-  interaction: ButtonInteraction,
-  _client: Client,
-): Promise<void> {
-  if (!interaction.customId.startsWith('defence_done_')) return;
-
-  const [action] = interaction.customId.split('!');
-  const isDone = action === 'defence_done_yes';
-
-  if (!isDone) {
-    await interaction.reply({
-      content: 'Understood. You can continue to post your defence in this channel.',
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  const guildId = interaction.guildId!;
-  const channelId = interaction.channelId;
-
-  const incident = await prisma.incident.findFirst({
-    where: { guildId, channelId, status: { not: 'closed' } },
-  });
-
-  if (!incident) {
-    await interaction.reply({
-      content: 'Could not find an active incident for this channel.',
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  const defendants = (incident.defendants as string[]) ?? [];
-  const defenceSubmitted = (incident.defenceSubmitted as string[]) ?? [];
-
-  const userId = interaction.user.id;
-
-  if (defenceSubmitted.includes(userId)) {
-    await interaction.reply({
-      content: 'You have already submitted your defence.',
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  // Mark this defendant as done
-  const updatedDefence = [...defenceSubmitted, userId];
-
-  // Remove send permissions for this user
-  const channel = interaction.channel;
-  if (channel && 'permissionOverwrites' in channel) {
-    try {
-      await channel.permissionOverwrites.edit(userId, {
-        SendMessages: false,
-      });
-    } catch (err) {
-      console.error('[Defence] Failed to revoke send permissions:', err);
-    }
-  }
-
-  // Check if all defendants have submitted
-  const allDone = defendants.length > 0 && updatedDefence.length >= defendants.length;
-
-  await prisma.incident.update({
-    where: { id: incident.id },
-    data: {
-      defenceSubmitted: updatedDefence,
-      status: allDone ? 'awaiting_review' : 'open',
-    },
-  });
-
-  await interaction.reply({
-    content: 'Your defence has been submitted. You can no longer send messages in this channel.',
-    flags: MessageFlags.Ephemeral,
-  });
-
-  if (allDone) {
-    const ticketAccessRoleIds = await getTicketAccessRoleIds(guildId);
-    const mention = formatRoleMentions(ticketAccessRoleIds);
-    if (channel && 'send' in channel) {
-      await channel.send(
-        `${mention} All defendants have submitted their defence. This incident is awaiting your review.`,
-      );
-    }
-  }
 }
 
 export async function handleIncidentSelectMenuInteraction(

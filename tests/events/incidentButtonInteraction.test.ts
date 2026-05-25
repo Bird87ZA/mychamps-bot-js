@@ -1,10 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import {
-  handleIncidentButtonInteraction,
-  handleIncidentDefenceButtonInteraction,
-} from '../../src/events/incidentButtonInteraction';
+import { handleIncidentButtonInteraction } from '../../src/events/incidentButtonInteraction';
 import { prisma } from '../../src/database';
 import { createMockInteraction, createMockClient } from '../mocks/discord';
+import { PermissionFlagsBits } from 'discord.js';
 
 const mockPrisma = vi.mocked(prisma);
 
@@ -77,8 +75,13 @@ describe('handleIncidentButtonInteraction', () => {
       channelId: '987654321',
       messageId: 'msg-123',
       championshipSlug: 'champ-a',
+      incidentCategoryId: null,
+      stewardRoleIds: [],
+      channelRoleIds: [],
+      buttonMessage:
+        'Click the button below to report an incident. You will be asked to provide details.',
       buttonLabel: 'Report Incident',
-      buttonColor: 'Danger',
+      buttonColor: 'Red',
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -179,8 +182,11 @@ describe('handleIncidentButtonInteraction', () => {
       championshipSlug: 'champ-a',
       incidentCategoryId: 'setup-category-id',
       stewardRoleIds: ['setup-role-a', 'setup-role-b'],
+      channelRoleIds: ['channel-role-a'],
+      buttonMessage:
+        'Click the button below to report an incident. You will be asked to provide details.',
       buttonLabel: 'Report Incident',
-      buttonColor: 'Danger',
+      buttonColor: 'Red',
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -194,6 +200,7 @@ describe('handleIncidentButtonInteraction', () => {
       mychampsIncidentId: null,
       championshipSlug: 'champ-a',
       defendants: ['Driver A', 'Driver B'],
+      stewardRoleIds: ['setup-role-a', 'setup-role-b'],
       status: 'open',
       defenceSubmitted: [],
       lastReminderAt: null,
@@ -214,6 +221,7 @@ describe('handleIncidentButtonInteraction', () => {
           incidentNumber: 4,
           championshipSlug: 'champ-a',
           defendants: expect.arrayContaining(['driver-user-a', 'driver-user-b']),
+          stewardRoleIds: ['setup-role-a', 'setup-role-b'],
           status: 'open',
         }),
       }),
@@ -222,8 +230,30 @@ describe('handleIncidentButtonInteraction', () => {
       expect.arrayContaining([
         expect.objectContaining({ id: 'setup-role-a' }),
         expect.objectContaining({ id: 'setup-role-b' }),
+        expect.objectContaining({ id: 'channel-role-a' }),
         expect.objectContaining({ id: 'driver-user-a' }),
         expect.objectContaining({ id: 'driver-user-b' }),
+      ]),
+    );
+    const permissionOverwrites = mockCreateChannel.mock.calls[0][0].permissionOverwrites;
+    const driverOverwrite = permissionOverwrites.find(
+      (overwrite: { id: string }) => overwrite.id === 'driver-user-a',
+    );
+    expect(driverOverwrite.allow).toEqual(
+      expect.arrayContaining([PermissionFlagsBits.ViewChannel]),
+    );
+    expect(driverOverwrite.allow).not.toEqual(
+      expect.arrayContaining([PermissionFlagsBits.SendMessages]),
+    );
+    expect(driverOverwrite.deny).toEqual(
+      expect.arrayContaining([PermissionFlagsBits.SendMessages]),
+    );
+    expect(permissionOverwrites).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'user1',
+          allow: expect.arrayContaining([PermissionFlagsBits.ViewChannel]),
+        }),
       ]),
     );
     expect(mockCreateChannel.mock.calls[0][0].name).toBe('incident-0004');
@@ -255,8 +285,10 @@ describe('handleIncidentButtonInteraction', () => {
     );
     expect(mockSend).not.toHaveBeenCalledWith(expect.stringContaining('<@&setup-role-a>'));
     expect(mockSend).toHaveBeenCalledWith(
-      '<@driver-user-a> <@driver-user-b> Please post a defence',
+      '<@driver-user-a> <@driver-user-b> Please submit a defence',
     );
+    const defenceButton = mockSend.mock.calls[0][0].components[0].components[0].data;
+    expect(defenceButton.custom_id).toBe('defence_done_yes!1');
     expect(mockModalSubmit.editReply).toHaveBeenCalledWith(
       expect.objectContaining({ content: expect.stringContaining('Incident reported') }),
     );
@@ -307,8 +339,13 @@ describe('handleIncidentButtonInteraction', () => {
       channelId: '987654321',
       messageId: 'msg-123',
       championshipSlug: 'champ-a',
+      incidentCategoryId: null,
+      stewardRoleIds: [],
+      channelRoleIds: [],
+      buttonMessage:
+        'Click the button below to report an incident. You will be asked to provide details.',
       buttonLabel: 'Report Incident',
-      buttonColor: 'Danger',
+      buttonColor: 'Red',
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -320,6 +357,7 @@ describe('handleIncidentButtonInteraction', () => {
       mychampsIncidentId: null,
       championshipSlug: 'champ-a',
       defendants: [],
+      stewardRoleIds: [],
       status: 'open',
       defenceSubmitted: [],
       lastReminderAt: null,
@@ -347,143 +385,6 @@ describe('handleIncidentButtonInteraction', () => {
       ]),
     );
     expect(mockSend).toHaveBeenCalledTimes(1);
-    expect(mockSend).not.toHaveBeenCalledWith(expect.stringContaining('Please post a defence'));
-  });
-});
-
-describe('handleIncidentDefenceButtonInteraction', () => {
-  it('ignores non-defence buttons', async () => {
-    const interaction = createMockInteraction({ customId: 'other_button' });
-    const client = createMockClient();
-
-    await handleIncidentDefenceButtonInteraction(interaction as never, client as never);
-
-    expect(mockPrisma.incident.findFirst).not.toHaveBeenCalled();
-  });
-
-  it('dismisses when user clicks No', async () => {
-    const interaction = createMockInteraction({ customId: 'defence_done_no!1' });
-    const client = createMockClient();
-
-    await handleIncidentDefenceButtonInteraction(interaction as never, client as never);
-
-    expect(interaction.reply).toHaveBeenCalledWith(
-      expect.objectContaining({
-        content: expect.stringContaining('continue'),
-      }),
-    );
-    expect(mockPrisma.incident.findFirst).not.toHaveBeenCalled();
-  });
-
-  it('marks defence as submitted when user clicks Yes', async () => {
-    const mockChannel = {
-      type: 0,
-      id: '987654321',
-      send: vi.fn(),
-      permissionOverwrites: {
-        edit: vi.fn(),
-      },
-    };
-
-    const interaction = createMockInteraction({
-      customId: 'defence_done_yes!1',
-      channelId: '987654321',
-      channel: mockChannel,
-    });
-    const client = createMockClient();
-
-    mockPrisma.incident.findFirst.mockResolvedValue({
-      id: 1,
-      guildId: '123456789',
-      channelId: '987654321',
-      mychampsIncidentId: null,
-      championshipSlug: 'champ-a',
-      defendants: ['user1'],
-      status: 'open',
-      defenceSubmitted: [],
-      lastReminderAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    mockPrisma.incident.update.mockResolvedValue({} as never);
-    mockGetSetting.mockResolvedValue(null);
-
-    await handleIncidentDefenceButtonInteraction(interaction as never, client as never);
-
-    expect(mockPrisma.incident.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: 1 },
-        data: expect.objectContaining({
-          defenceSubmitted: ['user1'],
-          status: 'awaiting_review',
-        }),
-      }),
-    );
-    expect(interaction.reply).toHaveBeenCalledWith(
-      expect.objectContaining({
-        content: expect.stringContaining('defence has been submitted'),
-      }),
-    );
-  });
-
-  it('tags ticket access roles when all defendants submit defence', async () => {
-    const mockSend = vi.fn();
-    const mockChannel = {
-      type: 0,
-      id: '987654321',
-      send: mockSend,
-      permissionOverwrites: { edit: vi.fn() },
-    };
-
-    const interaction = createMockInteraction({
-      customId: 'defence_done_yes!1',
-      channelId: '987654321',
-      channel: mockChannel,
-    });
-    const client = createMockClient();
-
-    mockPrisma.incident.findFirst.mockResolvedValue({
-      id: 1,
-      guildId: '123456789',
-      channelId: '987654321',
-      mychampsIncidentId: null,
-      championshipSlug: 'champ-a',
-      defendants: ['user1'],
-      status: 'open',
-      defenceSubmitted: [],
-      lastReminderAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    mockPrisma.incident.update.mockResolvedValue({} as never);
-    mockGetSetting.mockImplementation(async (_guildId, key) => {
-      if (key === 'ticket-access-roles') return '["ticket-role-a","ticket-role-b"]';
-      return null;
-    });
-
-    await handleIncidentDefenceButtonInteraction(interaction as never, client as never);
-
-    expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('<@&ticket-role-a>'));
-    expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('<@&ticket-role-b>'));
-  });
-
-  it('replies with error when incident not found', async () => {
-    const interaction = createMockInteraction({
-      customId: 'defence_done_yes!99',
-      channelId: '987654321',
-    });
-    const client = createMockClient();
-
-    mockPrisma.incident.findFirst.mockResolvedValue(null);
-
-    await handleIncidentDefenceButtonInteraction(interaction as never, client as never);
-
-    expect(interaction.reply).toHaveBeenCalledWith(
-      expect.objectContaining({
-        content: expect.stringContaining('Could not find'),
-      }),
-    );
+    expect(mockSend).not.toHaveBeenCalledWith(expect.stringContaining('Please submit a defence'));
   });
 });
