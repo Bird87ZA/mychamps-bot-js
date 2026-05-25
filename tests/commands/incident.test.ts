@@ -128,7 +128,7 @@ describe('incidentCommand', () => {
       );
     });
 
-    it('shows newest championship per team with team-prefixed labels in setup order', async () => {
+    it('opens setup modal with newest championship per team in setup order', async () => {
       const championships = [
         {
           id: 1,
@@ -180,14 +180,6 @@ describe('incidentCommand', () => {
         },
       ];
 
-      const mockSelectInteraction = {
-        user: { id: 'user1' },
-        values: ['team-a-champ-3'],
-        showModal: vi.fn(),
-        awaitModalSubmit: vi.fn().mockRejectedValue(new Error('timeout')),
-        editReply: vi.fn(),
-      };
-
       const interaction = createMockInteraction({
         memberPermissions: {
           has: vi.fn((perm) => perm === PermissionFlagsBits.Administrator),
@@ -195,10 +187,10 @@ describe('incidentCommand', () => {
         channel: {
           type: 0, // GuildText
           id: '987654321',
-          awaitMessageComponent: vi.fn().mockResolvedValue(mockSelectInteraction),
           send: vi.fn(),
         },
-        editReply: vi.fn(),
+        showModal: vi.fn(),
+        awaitModalSubmit: vi.fn().mockRejectedValue(new Error('timeout')),
       });
       interaction.options.getSubcommand.mockReturnValue('setup');
       const client = createMockClient();
@@ -208,30 +200,103 @@ describe('incidentCommand', () => {
 
       await incidentCommand.execute(interaction as never, client as never);
 
-      expect(interaction.reply).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: expect.stringContaining('Select the championship'),
-          components: expect.any(Array),
-        }),
-      );
+      expect(interaction.showModal).toHaveBeenCalled();
 
-      const replyPayload = interaction.reply.mock.calls[0][0] as {
-        components: Array<{
-          toJSON: () => {
-            components: Array<{
-              options: Array<{ label: string; value: string }>;
-            }>;
-          };
-        }>;
+      const modalJson = interaction.showModal.mock.calls[0][0].toJSON();
+      const championshipComponent = modalJson.components.find(
+        (component: { label?: string }) => component.label === 'Championship',
+      )?.component as {
+        options: Array<{ label: string; value: string }>;
       };
-      const options = replyPayload.components[0].toJSON().components[0].options;
 
-      expect(options.map((option) => option.label)).toEqual([
+      expect(championshipComponent.options.map((option) => option.label)).toEqual([
         'Team A - Championship 3',
         'Team B - Championship 3',
       ]);
-      expect(options.map((option) => option.value)).toEqual(['team-a-champ-3', 'team-b-champ-3']);
-      expect(mockSelectInteraction.showModal).toHaveBeenCalled();
+      expect(championshipComponent.options.map((option) => option.value)).toEqual([
+        'team-a-champ-3',
+        'team-b-champ-3',
+      ]);
+      expect(modalJson.components.map((component: { label?: string }) => component.label)).toEqual([
+        'Championship',
+        'Button Label',
+        'Button Color',
+        'Stewards Role',
+        'Channel Group',
+      ]);
+    });
+
+    it('posts incident button from setup modal selections', async () => {
+      const championships = [{ name: 'Championship A', slug: 'champ-a' }];
+      const mockSend = vi.fn().mockResolvedValue({ id: 'posted-message-id' });
+      const mockModalSubmit = {
+        fields: {
+          getStringSelectValues: vi.fn((field: string) => {
+            if (field === 'incident_setup_championship') return ['champ-a'];
+            if (field === 'incident_setup_button_color') return ['Secondary'];
+            return [];
+          }),
+          getTextInputValue: vi.fn((field: string) => {
+            if (field === 'incident_setup_button_label') return 'Report Race Incident';
+            return '';
+          }),
+          getSelectedRoles: vi.fn(
+            () =>
+              new Map([
+                ['steward-role-a', { id: 'steward-role-a' }],
+                ['steward-role-b', { id: 'steward-role-b' }],
+              ]),
+          ),
+          getSelectedChannels: vi.fn(
+            () => new Map([['incident-category-id', { id: 'incident-category-id' }]]),
+          ),
+        },
+        deferReply: vi.fn(),
+        editReply: vi.fn(),
+        user: { id: 'user1' },
+      };
+      const interaction = createMockInteraction({
+        memberPermissions: {
+          has: vi.fn((perm) => perm === PermissionFlagsBits.Administrator),
+        },
+        channel: {
+          type: 0,
+          id: '987654321',
+          send: mockSend,
+        },
+        showModal: vi.fn(),
+        awaitModalSubmit: vi.fn().mockResolvedValue(mockModalSubmit),
+      });
+      interaction.options.getSubcommand.mockReturnValue('setup');
+      const client = createMockClient();
+
+      mockFromGuild.mockResolvedValue({
+        getChampionships: vi.fn().mockResolvedValue(championships),
+      } as never);
+      mockPrisma.incidentButton.create.mockResolvedValue({} as never);
+
+      await incidentCommand.execute(interaction as never, client as never);
+
+      expect(mockSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          components: expect.any(Array),
+          embeds: expect.any(Array),
+        }),
+      );
+      expect(mockPrisma.incidentButton.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            championshipSlug: 'champ-a',
+            incidentCategoryId: 'incident-category-id',
+            stewardRoleIds: ['steward-role-a', 'steward-role-b'],
+            buttonLabel: 'Report Race Incident',
+            buttonColor: 'Secondary',
+          }),
+        }),
+      );
+      expect(mockModalSubmit.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({ content: expect.stringContaining('posted successfully') }),
+      );
     });
   });
 

@@ -106,21 +106,24 @@ model Randomiser {
 }
 
 model IncidentButton {
-  id               Int      @id @default(autoincrement())
-  guildId          String   @map("guild_id")
-  channelId        String   @map("channel_id")
-  messageId        String   @unique @map("message_id")
-  championshipSlug String   @map("championship_slug")
-  buttonLabel      String   @default("Report Incident") @map("button_label")
-  buttonColor      String   @default("Danger") @map("button_color")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  id                 Int      @id @default(autoincrement())
+  guildId            String   @map("guild_id")
+  channelId          String   @map("channel_id")
+  messageId          String   @unique @map("message_id")
+  championshipSlug   String   @map("championship_slug")
+  incidentCategoryId String?  @map("incident_category_id")
+  stewardRoleIds     Json     @default("[]") @map("steward_role_ids") @db.Json
+  buttonLabel        String   @default("Report Incident") @map("button_label")
+  buttonColor        String   @default("Danger") @map("button_color")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
 
   @@map("incident_buttons")
 }
 
 model Incident {
   id                 Int       @id @default(autoincrement())
+  incidentNumber     Int?      @map("incident_number")
   guildId            String    @map("guild_id")
   channelId          String?   @map("channel_id")
   mychampsIncidentId Int?      @map("mychamps_incident_id")
