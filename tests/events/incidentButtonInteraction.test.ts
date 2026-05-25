@@ -78,6 +78,7 @@ describe('handleIncidentButtonInteraction', () => {
       incidentCategoryId: null,
       stewardRoleIds: [],
       channelRoleIds: [],
+      addReporterToChannel: false,
       buttonMessage:
         'Click the button below to report an incident. You will be asked to provide details.',
       buttonLabel: 'Report Incident',
@@ -183,6 +184,7 @@ describe('handleIncidentButtonInteraction', () => {
       incidentCategoryId: 'setup-category-id',
       stewardRoleIds: ['setup-role-a', 'setup-role-b'],
       channelRoleIds: ['channel-role-a'],
+      addReporterToChannel: false,
       buttonMessage:
         'Click the button below to report an incident. You will be asked to provide details.',
       buttonLabel: 'Report Incident',
@@ -294,6 +296,102 @@ describe('handleIncidentButtonInteraction', () => {
     );
   });
 
+  it('adds reporter view-only access when setup option is enabled', async () => {
+    const mockSend = vi.fn().mockResolvedValue({ id: 'new-channel-msg' });
+    const mockCreateChannel = vi.fn().mockResolvedValue({
+      id: 'new-channel-id',
+      send: mockSend,
+    });
+
+    const mockModalSubmit = {
+      fields: {
+        getTextInputValue: vi.fn((field: string) => {
+          if (field === 'description') return 'Collision at turn 1';
+          return '';
+        }),
+        getSelectedUsers: vi.fn(
+          () => new Map([['driver-user-a', { id: 'driver-user-a', username: 'Driver A' }]]),
+        ),
+        getUploadedFiles: vi.fn(() => null),
+      },
+      deferReply: vi.fn(),
+      editReply: vi.fn(),
+      user: { id: 'user1' },
+    };
+
+    const interaction = createMockInteraction({
+      customId: 'incident_report!champ-a',
+      message: { id: 'msg-123' },
+      showModal: vi.fn(),
+      awaitModalSubmit: vi.fn().mockResolvedValue(mockModalSubmit),
+      guild: {
+        name: 'Test Guild',
+        iconURL: () => 'https://icon.url',
+        roles: {
+          everyone: { id: 'everyone-role-id' },
+        },
+        channels: {
+          create: mockCreateChannel,
+        },
+      },
+    });
+    const client = createMockClient();
+
+    mockPrisma.incidentButton.findUnique.mockResolvedValue({
+      id: 1,
+      guildId: '123456789',
+      channelId: '987654321',
+      messageId: 'msg-123',
+      championshipSlug: 'champ-a',
+      incidentCategoryId: null,
+      stewardRoleIds: ['setup-role-a'],
+      channelRoleIds: [],
+      addReporterToChannel: true,
+      buttonMessage:
+        'Click the button below to report an incident. You will be asked to provide details.',
+      buttonLabel: 'Report Incident',
+      buttonColor: 'Red',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    mockPrisma.incident.create.mockResolvedValue({
+      id: 1,
+      guildId: '123456789',
+      channelId: 'new-channel-id',
+      mychampsIncidentId: null,
+      championshipSlug: 'champ-a',
+      defendants: ['driver-user-a'],
+      stewardRoleIds: ['setup-role-a'],
+      status: 'open',
+      defenceSubmitted: [],
+      lastReminderAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const mockApiClient = { createIncident: vi.fn().mockResolvedValue({ id: 42 }) };
+    mockFromGuild.mockResolvedValue(mockApiClient as never);
+    mockPrisma.incident.findMany.mockResolvedValue([]);
+
+    await handleIncidentButtonInteraction(interaction as never, client as never);
+
+    const permissionOverwrites = mockCreateChannel.mock.calls[0][0].permissionOverwrites;
+    const reporterOverwrite = permissionOverwrites.find(
+      (overwrite: { id: string }) => overwrite.id === 'user1',
+    );
+
+    expect(reporterOverwrite.allow).toEqual(
+      expect.arrayContaining([PermissionFlagsBits.ViewChannel]),
+    );
+    expect(reporterOverwrite.allow).not.toEqual(
+      expect.arrayContaining([PermissionFlagsBits.SendMessages]),
+    );
+    expect(reporterOverwrite.deny).toEqual(
+      expect.arrayContaining([PermissionFlagsBits.SendMessages]),
+    );
+  });
+
   it('does not add driver access or prompt for defence when no users are selected', async () => {
     const mockSend = vi.fn().mockResolvedValue({ id: 'new-channel-msg' });
     const mockCreateChannel = vi.fn().mockResolvedValue({
@@ -342,6 +440,7 @@ describe('handleIncidentButtonInteraction', () => {
       incidentCategoryId: null,
       stewardRoleIds: [],
       channelRoleIds: [],
+      addReporterToChannel: false,
       buttonMessage:
         'Click the button below to report an incident. You will be asked to provide details.',
       buttonLabel: 'Report Incident',
