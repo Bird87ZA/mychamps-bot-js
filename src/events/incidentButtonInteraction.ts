@@ -24,8 +24,9 @@ import {
   formatRoleMentions,
   getIncidentsCategoryId,
   getTicketAccessRoleIds,
+  parseSettingIds,
 } from '../utils/incidentSettings';
-import type { ButtonInteraction, StringSelectMenuInteraction, User } from 'discord.js';
+import type { ButtonInteraction, Guild, StringSelectMenuInteraction, User } from 'discord.js';
 
 interface EvidenceFile {
   name: string;
@@ -144,12 +145,18 @@ export async function handleIncidentButtonInteraction(
     console.error('[IncidentReport] API error:', err);
   }
 
-  // Resolve settings
-  const incidentCategoryId = await getIncidentsCategoryId(guildId);
-  const ticketAccessRoleIds = await getTicketAccessRoleIds(guildId);
+  // Resolve per-button setup, with global settings as a fallback for older buttons.
+  const incidentCategoryId =
+    incidentButton.incidentCategoryId ?? (await getIncidentsCategoryId(guildId));
+  const configuredStewardRoleIds = parseStoredRoleIds(incidentButton.stewardRoleIds);
+  const ticketAccessRoleIds =
+    configuredStewardRoleIds.length > 0
+      ? configuredStewardRoleIds
+      : await getTicketAccessRoleIds(guildId);
 
   // Create private text channel
-  const channelName = `incident-${Date.now()}`;
+  const incidentNumber = await getNextIncidentNumber(guildId, guild);
+  const channelName = `incident-${formatIncidentNumber(incidentNumber)}`;
   let incidentChannel;
   try {
     const channelOptions: GuildChannelCreateOptions = {
@@ -201,16 +208,15 @@ export async function handleIncidentButtonInteraction(
   const embed = new EmbedBuilder()
     .setTitle('Incident Report')
     .addFields(
-      { name: 'Championship', value: incidentButton.championshipSlug, inline: true },
       { name: 'Reported By', value: `<@${interaction.user.id}>`, inline: true },
       { name: 'Driver(s) Involved', value: formatUserMentions(selectedDriverUsers) },
       { name: 'Description', value: description },
       ...(evidenceValue ? [{ name: 'Evidence', value: evidenceValue }] : []),
     )
-    .setColor(0xe74c3c)
+    .setColor(0x95a5a6)
     .setTimestamp();
 
-  // Add defence buttons for each defendant (simplified — tag steward for review)
+  // Add the defence submission button for selected drivers.
   const doneRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`defence_done_yes!0`)
@@ -231,6 +237,7 @@ export async function handleIncidentButtonInteraction(
     data: {
       guildId,
       channelId: incidentChannel.id,
+      incidentNumber,
       mychampsIncidentId: apiIncidentId,
       championshipSlug: incidentButton.championshipSlug,
       defendants: defendants,
@@ -244,6 +251,60 @@ export async function handleIncidentButtonInteraction(
   await modalSubmit.editReply({
     content: `Incident reported successfully. Channel created: <#${incidentChannel.id}>`,
   });
+}
+
+function parseStoredRoleIds(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .filter((roleId): roleId is string => typeof roleId === 'string')
+      .map((roleId) => roleId.trim())
+      .filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    return parseSettingIds(value);
+  }
+
+  return [];
+}
+
+function formatIncidentNumber(incidentNumber: number): string {
+  return incidentNumber.toString().padStart(4, '0');
+}
+
+async function getNextIncidentNumber(guildId: string, guild: Guild): Promise<number> {
+  const incidents =
+    (await prisma.incident.findMany({
+      where: { guildId },
+      select: { incidentNumber: true },
+    })) ?? [];
+
+  const storedMax = incidents.reduce(
+    (max, incident) => Math.max(max, incident.incidentNumber ?? 0),
+    0,
+  );
+  const channelMax = getMaxIncidentChannelNumber(guild);
+
+  return Math.max(storedMax, channelMax) + 1;
+}
+
+function getMaxIncidentChannelNumber(guild: Guild): number {
+  const channels = guild.channels.cache;
+  if (!channels) {
+    return 0;
+  }
+
+  let max = 0;
+  for (const channel of channels.values()) {
+    const match = /^incident-(\d+)$/i.exec(channel.name);
+    if (!match) {
+      continue;
+    }
+
+    max = Math.max(max, Number(match[1]));
+  }
+
+  return max;
 }
 
 function formatUserMentions(users: User[]): string {

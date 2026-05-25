@@ -162,6 +162,9 @@ describe('handleIncidentButtonInteraction', () => {
           everyone: { id: 'everyone-role-id' },
         },
         channels: {
+          cache: new Map([
+            ['old-incident-channel', { id: 'old-incident-channel', name: 'incident-0003' }],
+          ]),
           create: mockCreateChannel,
         },
       },
@@ -174,14 +177,18 @@ describe('handleIncidentButtonInteraction', () => {
       channelId: '987654321',
       messageId: 'msg-123',
       championshipSlug: 'champ-a',
+      incidentCategoryId: 'setup-category-id',
+      stewardRoleIds: ['setup-role-a', 'setup-role-b'],
       buttonLabel: 'Report Incident',
       buttonColor: 'Danger',
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+    mockPrisma.incident.findMany.mockResolvedValue([]);
 
     mockPrisma.incident.create.mockResolvedValue({
       id: 1,
+      incidentNumber: 4,
       guildId: '123456789',
       channelId: 'new-channel-id',
       mychampsIncidentId: null,
@@ -196,11 +203,6 @@ describe('handleIncidentButtonInteraction', () => {
 
     const mockApiClient = { createIncident: vi.fn().mockResolvedValue({ id: 42 }) };
     mockFromGuild.mockResolvedValue(mockApiClient as never);
-    mockGetSetting.mockImplementation(async (_guildId, key) => {
-      if (key === 'incidents-category') return 'incidents-category-id';
-      if (key === 'ticket-access-roles') return '["ticket-role-a","ticket-role-b"]';
-      return null;
-    });
 
     await handleIncidentButtonInteraction(interaction as never, client as never);
 
@@ -209,6 +211,7 @@ describe('handleIncidentButtonInteraction', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           guildId: '123456789',
+          incidentNumber: 4,
           championshipSlug: 'champ-a',
           defendants: expect.arrayContaining(['driver-user-a', 'driver-user-b']),
           status: 'open',
@@ -217,13 +220,14 @@ describe('handleIncidentButtonInteraction', () => {
     );
     expect(mockCreateChannel.mock.calls[0][0].permissionOverwrites).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'ticket-role-a' }),
-        expect.objectContaining({ id: 'ticket-role-b' }),
+        expect.objectContaining({ id: 'setup-role-a' }),
+        expect.objectContaining({ id: 'setup-role-b' }),
         expect.objectContaining({ id: 'driver-user-a' }),
         expect.objectContaining({ id: 'driver-user-b' }),
       ]),
     );
-    expect(mockCreateChannel.mock.calls[0][0].parent).toBe('incidents-category-id');
+    expect(mockCreateChannel.mock.calls[0][0].name).toBe('incident-0004');
+    expect(mockCreateChannel.mock.calls[0][0].parent).toBe('setup-category-id');
     expect(mockSend).toHaveBeenCalledWith(
       expect.objectContaining({
         embeds: expect.arrayContaining([
@@ -239,11 +243,17 @@ describe('handleIncidentButtonInteraction', () => {
                   value: expect.stringContaining('clip.mp4'),
                 }),
               ]),
+              color: 0x95a5a6,
             }),
           }),
         ]),
       }),
     );
+    const embedPayload = mockSend.mock.calls[0][0].embeds[0].data;
+    expect(embedPayload.fields.map((field: { name: string }) => field.name)).not.toContain(
+      'Championship',
+    );
+    expect(mockSend).not.toHaveBeenCalledWith(expect.stringContaining('<@&setup-role-a>'));
     expect(mockSend).toHaveBeenCalledWith(
       '<@driver-user-a> <@driver-user-b> Please post a defence',
     );

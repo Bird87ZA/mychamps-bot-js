@@ -2,13 +2,17 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ChannelSelectMenuBuilder,
   ChannelType,
   ChatInputCommandInteraction,
   Client,
   EmbedBuilder,
+  LabelBuilder,
   MessageFlags,
   ModalBuilder,
+  ModalSubmitInteraction,
   PermissionFlagsBits,
+  RoleSelectMenuBuilder,
   SlashCommandBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuInteraction,
@@ -26,6 +30,45 @@ const BUTTON_COLOR_MAP: Record<string, ButtonStyle> = {
   Success: ButtonStyle.Success,
   Danger: ButtonStyle.Danger,
 };
+
+const SETUP_MODAL_CUSTOM_ID = 'incident_setup_modal';
+const DEFAULT_BUTTON_LABEL = 'Report Incident';
+const DEFAULT_BUTTON_COLOR = 'Danger';
+
+const SETUP_FIELD_IDS = {
+  championship: 'incident_setup_championship',
+  buttonLabel: 'incident_setup_button_label',
+  buttonColor: 'incident_setup_button_color',
+  stewardRoles: 'incident_setup_steward_roles',
+  channelGroup: 'incident_setup_channel_group',
+} as const;
+
+const BUTTON_COLOR_OPTIONS = [
+  {
+    label: 'Blue',
+    value: 'Primary',
+    description: 'Primary button style',
+    emoji: '🔵',
+  },
+  {
+    label: 'Grey',
+    value: 'Secondary',
+    description: 'Secondary button style',
+    emoji: '⚪',
+  },
+  {
+    label: 'Green',
+    value: 'Success',
+    description: 'Success button style',
+    emoji: '🟢',
+  },
+  {
+    label: 'Red',
+    value: 'Danger',
+    description: 'Danger button style',
+    emoji: '🔴',
+  },
+] as const;
 
 function getChampionshipCreatedAtTimestamp(championship: ChampionshipSummary): number {
   const timestamp = Date.parse(championship.created_at ?? '');
@@ -81,6 +124,108 @@ function newestChampionshipPerTeam(
 
     return true;
   });
+}
+
+function truncateSelectText(value: string): string {
+  return value.length > 100 ? value.slice(0, 97) + '...' : value;
+}
+
+function buildIncidentSetupModal(championships: ChampionshipSummary[]): ModalBuilder {
+  const championshipSelect = new StringSelectMenuBuilder()
+    .setCustomId(SETUP_FIELD_IDS.championship)
+    .setPlaceholder('Select a championship')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .setRequired(true)
+    .addOptions(
+      championships.slice(0, 25).map((championship) => ({
+        label: truncateSelectText(formatChampionshipOptionLabel(championship)),
+        value: championship.slug,
+      })),
+    );
+
+  const buttonLabelInput = new TextInputBuilder()
+    .setCustomId(SETUP_FIELD_IDS.buttonLabel)
+    .setStyle(TextInputStyle.Short)
+    .setValue(DEFAULT_BUTTON_LABEL)
+    .setRequired(true)
+    .setMaxLength(80);
+
+  const buttonColorSelect = new StringSelectMenuBuilder()
+    .setCustomId(SETUP_FIELD_IDS.buttonColor)
+    .setPlaceholder('Select a button color')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .setRequired(true)
+    .addOptions(
+      BUTTON_COLOR_OPTIONS.map((option) => ({
+        ...option,
+        default: option.value === DEFAULT_BUTTON_COLOR,
+      })),
+    );
+
+  const stewardRolesSelect = new RoleSelectMenuBuilder()
+    .setCustomId(SETUP_FIELD_IDS.stewardRoles)
+    .setPlaceholder('Select steward roles')
+    .setMinValues(1)
+    .setMaxValues(25)
+    .setRequired(true);
+
+  const channelGroupSelect = new ChannelSelectMenuBuilder()
+    .setCustomId(SETUP_FIELD_IDS.channelGroup)
+    .setPlaceholder('Select an incident channel category')
+    .setChannelTypes(ChannelType.GuildCategory)
+    .setMinValues(1)
+    .setMaxValues(1)
+    .setRequired(true);
+
+  return new ModalBuilder()
+    .setCustomId(SETUP_MODAL_CUSTOM_ID)
+    .setTitle('Configure Incident Button')
+    .addLabelComponents(
+      new LabelBuilder()
+        .setLabel('Championship')
+        .setDescription('Championship used when incidents are reported')
+        .setStringSelectMenuComponent(championshipSelect),
+      new LabelBuilder()
+        .setLabel('Button Label')
+        .setDescription('Text shown on the incident report button')
+        .setTextInputComponent(buttonLabelInput),
+      new LabelBuilder()
+        .setLabel('Button Color')
+        .setDescription('Discord buttons support four predefined styles')
+        .setStringSelectMenuComponent(buttonColorSelect),
+      new LabelBuilder()
+        .setLabel('Stewards Role')
+        .setDescription('Roles that can view the created incident channel')
+        .setRoleSelectMenuComponent(stewardRolesSelect),
+      new LabelBuilder()
+        .setLabel('Channel Group')
+        .setDescription('Category where new incident channels are created')
+        .setChannelSelectMenuComponent(channelGroupSelect),
+    );
+}
+
+function getFirstStringSelectValue(modalSubmit: ModalSubmitInteraction, customId: string): string {
+  return modalSubmit.fields.getStringSelectValues(customId)[0] ?? '';
+}
+
+function getSelectedRoleIds(modalSubmit: ModalSubmitInteraction, customId: string): string[] {
+  const roles = modalSubmit.fields.getSelectedRoles(customId, true);
+
+  return Array.from(roles.keys());
+}
+
+function getSelectedChannelId(modalSubmit: ModalSubmitInteraction, customId: string): string {
+  const channels = modalSubmit.fields.getSelectedChannels(customId, true, [
+    ChannelType.GuildCategory,
+  ]);
+
+  return Array.from(channels.keys())[0] ?? '';
+}
+
+function normalizeButtonColor(value: string): string {
+  return value in BUTTON_COLOR_MAP ? value : DEFAULT_BUTTON_COLOR;
 }
 
 export const incidentCommand: BotCommand = {
@@ -164,100 +309,49 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
     return;
   }
 
-  const sortedChampionships = championships.slice().sort(compareChampionshipsForSetup);
-  const newestChampionships = newestChampionshipPerTeam(sortedChampionships);
-  const options = newestChampionships.slice(0, 25).map((c) => ({
-    label: formatChampionshipOptionLabel(c),
-    value: c.slug,
-  }));
-
-  const selectMenu = new StringSelectMenuBuilder()
-    .setCustomId('incident_setup_select_championship')
-    .setPlaceholder('Select a championship...')
-    .addOptions(options);
-
-  const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
-
-  await interaction.reply({
-    content: 'Select the championship for this incident button:',
-    components: [row],
-    flags: MessageFlags.Ephemeral,
-  });
-
-  // Collect the championship selection
-  const channelForCollect = interaction.channel;
-  if (!channelForCollect) return;
-
-  let selectInteraction: StringSelectMenuInteraction;
-  try {
-    const collected = await channelForCollect.awaitMessageComponent({
-      filter: (i) =>
-        i.customId === 'incident_setup_select_championship' && i.user.id === interaction.user.id,
-      time: 60_000,
-    });
-    selectInteraction = collected as StringSelectMenuInteraction;
-  } catch {
-    await interaction.editReply({ content: 'Setup timed out.', components: [] });
-    return;
-  }
-
-  const selectedSlug = selectInteraction.values[0];
-  const selectedChampionship = newestChampionships.find((c) => c.slug === selectedSlug);
-
-  // Show modal to get button label and color
-  const modal = new ModalBuilder()
-    .setCustomId('incident_setup_modal')
-    .setTitle('Configure Incident Button');
-
-  const labelInput = new TextInputBuilder()
-    .setCustomId('button_label')
-    .setLabel('Button Label')
-    .setStyle(TextInputStyle.Short)
-    .setValue('Report Incident')
-    .setRequired(true)
-    .setMaxLength(80);
-
-  const colorInput = new TextInputBuilder()
-    .setCustomId('button_color')
-    .setLabel('Button Color (Primary/Secondary/Danger)')
-    .setStyle(TextInputStyle.Short)
-    .setValue('Danger')
-    .setRequired(true)
-    .setMaxLength(20);
-
-  modal.addComponents(
-    new ActionRowBuilder<TextInputBuilder>().addComponents(labelInput),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(colorInput),
-  );
-
-  await selectInteraction.showModal(modal);
-
-  let modalSubmit;
-  try {
-    modalSubmit = await selectInteraction.awaitModalSubmit({
-      filter: (i) => i.customId === 'incident_setup_modal' && i.user.id === interaction.user.id,
-      time: 120_000,
-    });
-  } catch {
-    await interaction.editReply({ content: 'Setup timed out.', components: [] });
-    return;
-  }
-
-  const buttonLabel = modalSubmit.fields.getTextInputValue('button_label') || 'Report Incident';
-  const buttonColorRaw = modalSubmit.fields.getTextInputValue('button_color');
-  const validColors = ['Primary', 'Secondary', 'Success', 'Danger'];
-  const buttonColor = validColors.includes(buttonColorRaw) ? buttonColorRaw : 'Danger';
-  const buttonStyle = BUTTON_COLOR_MAP[buttonColor];
-
-  // Fetch the channel to post the button in
   const channel = interaction.channel;
   if (!channel || channel.type !== ChannelType.GuildText) {
-    await modalSubmit.reply({
+    await interaction.reply({
       content: 'This command must be used in a text channel.',
       flags: MessageFlags.Ephemeral,
     });
     return;
   }
+
+  const sortedChampionships = championships.slice().sort(compareChampionshipsForSetup);
+  const newestChampionships = newestChampionshipPerTeam(sortedChampionships);
+  const modal = buildIncidentSetupModal(newestChampionships);
+
+  await interaction.showModal(modal);
+
+  let modalSubmit: ModalSubmitInteraction;
+  try {
+    modalSubmit = await interaction.awaitModalSubmit({
+      filter: (i) => i.customId === SETUP_MODAL_CUSTOM_ID && i.user.id === interaction.user.id,
+      time: 300_000,
+    });
+  } catch {
+    return;
+  }
+
+  await modalSubmit.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const selectedSlug = getFirstStringSelectValue(modalSubmit, SETUP_FIELD_IDS.championship);
+  const selectedChampionship = newestChampionships.find((c) => c.slug === selectedSlug);
+  if (!selectedChampionship) {
+    await modalSubmit.editReply({ content: 'Selected championship could not be found.' });
+    return;
+  }
+
+  const buttonLabel =
+    modalSubmit.fields.getTextInputValue(SETUP_FIELD_IDS.buttonLabel).trim() ||
+    DEFAULT_BUTTON_LABEL;
+  const buttonColor = normalizeButtonColor(
+    getFirstStringSelectValue(modalSubmit, SETUP_FIELD_IDS.buttonColor),
+  );
+  const buttonStyle = BUTTON_COLOR_MAP[buttonColor];
+  const stewardRoleIds = getSelectedRoleIds(modalSubmit, SETUP_FIELD_IDS.stewardRoles);
+  const incidentCategoryId = getSelectedChannelId(modalSubmit, SETUP_FIELD_IDS.channelGroup);
 
   // Build and post the incident button
   const button = new ButtonBuilder()
@@ -283,14 +377,15 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
       channelId: channel.id,
       messageId: postedMessage.id,
       championshipSlug: selectedSlug,
+      incidentCategoryId,
+      stewardRoleIds,
       buttonLabel,
       buttonColor,
     },
   });
 
-  await modalSubmit.reply({
+  await modalSubmit.editReply({
     content: `Incident report button posted successfully in <#${channel.id}>.`,
-    flags: MessageFlags.Ephemeral,
   });
 }
 
