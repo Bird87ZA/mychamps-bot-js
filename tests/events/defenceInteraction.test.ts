@@ -279,6 +279,10 @@ describe('handleDefenceDoneInteraction', () => {
     expect(mockChannel.permissionOverwrites.edit).toHaveBeenCalledWith('user1', {
       ViewChannel: false,
       SendMessages: false,
+      SendMessagesInThreads: false,
+      CreatePublicThreads: false,
+      CreatePrivateThreads: false,
+      AddReactions: false,
     });
     expect(mockPrisma.incident.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -382,6 +386,51 @@ describe('handleDefenceDoneInteraction', () => {
 
     expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('<@&ticket-role-a>'));
     expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('<@&ticket-role-b>'));
+  });
+
+  it('notifies stewards when the bot cannot remove a defendant from the channel', async () => {
+    const mockModalSubmit = createMockDefenceModalSubmit();
+    const mockSend = vi.fn();
+    const mockChannel = {
+      type: 0,
+      id: '987654321',
+      send: mockSend,
+      permissionOverwrites: { edit: vi.fn().mockRejectedValue({ code: 50013 }) },
+    };
+
+    const interaction = createMockButtonInteraction({
+      customId: 'defence_done_yes!1',
+      channel: mockChannel,
+      awaitModalSubmit: vi.fn().mockResolvedValue(mockModalSubmit),
+    });
+    const client = createMockClient();
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockPrisma.incident.findFirst.mockResolvedValue({
+      id: 1,
+      guildId: '123456789',
+      channelId: '987654321',
+      mychampsIncidentId: null,
+      championshipSlug: 'champ-a',
+      defendants: ['user1'],
+      stewardRoleIds: ['steward-role-a'],
+      status: 'open',
+      defenceSubmitted: [],
+      lastReminderAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    mockPrisma.incident.update.mockResolvedValue({} as never);
+
+    await handleDefenceDoneInteraction(interaction as never, client as never);
+
+    expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('Manage Roles'));
+    expect(mockSend).toHaveBeenCalledWith(expect.stringContaining('could not remove the driver'));
+    expect(mockModalSubmit.editReply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('could not remove you') }),
+    );
+
+    consoleSpy.mockRestore();
   });
 
   it('replies with error when defence already submitted by this user', async () => {

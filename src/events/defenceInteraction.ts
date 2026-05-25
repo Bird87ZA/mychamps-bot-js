@@ -36,6 +36,15 @@ const DEFENCE_FIELD_IDS = {
   file: 'defence_file',
 } as const;
 
+const DEFENDANT_REMOVAL_PERMISSION_DENIES = {
+  ViewChannel: false,
+  SendMessages: false,
+  SendMessagesInThreads: false,
+  CreatePublicThreads: false,
+  CreatePrivateThreads: false,
+  AddReactions: false,
+} as const;
+
 /**
  * Called when a new message is created in a guild channel.
  * Checks if the channel is an active incident channel and if the author
@@ -177,6 +186,29 @@ function parseStoredRoleIds(value: unknown): string[] {
   return [];
 }
 
+function isMissingPermissionsError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const errorWithCode = error as { code?: unknown; rawError?: { code?: unknown } };
+
+  return errorWithCode.code === 50013 || errorWithCode.rawError?.code === 50013;
+}
+
+function formatDefendantRemovalError(userId: string, error: unknown): string {
+  const baseMessage = `I could not remove <@${userId}> from this incident channel after their defence was submitted.`;
+
+  if (!isMissingPermissionsError(error)) {
+    return `${baseMessage} Please check the bot logs and channel permission overrides.`;
+  }
+
+  return [
+    baseMessage,
+    'Grant the bot `Manage Roles` and `Manage Channels`, and make sure the bot role is above the roles it needs to manage.',
+  ].join('\n');
+}
+
 /**
  * Handle the Yes/No defence done buttons.
  */
@@ -288,15 +320,19 @@ export async function handleDefenceDoneInteraction(
 
   const updatedDefence = [...defenceSubmitted, userId];
   const allDone = defendants.length > 0 && updatedDefence.length >= defendants.length;
+  let defendantRemoved = false;
 
   if (channel && 'permissionOverwrites' in channel) {
     try {
-      await channel.permissionOverwrites.edit(userId, {
-        ViewChannel: false,
-        SendMessages: false,
-      });
+      await channel.permissionOverwrites.edit(userId, DEFENDANT_REMOVAL_PERMISSION_DENIES);
+      defendantRemoved = true;
     } catch (err) {
       console.error('[Defence] Failed to remove defendant permissions:', err);
+      try {
+        await channel.send(formatDefendantRemovalError(userId, err));
+      } catch {
+        // Nothing else can be done if the bot cannot notify the channel.
+      }
     }
   }
 
@@ -312,13 +348,18 @@ export async function handleDefenceDoneInteraction(
   const stewardRoleIds =
     savedStewardRoleIds.length > 0 ? savedStewardRoleIds : await getTicketAccessRoleIds(guildId);
   const mention = formatRoleMentions(stewardRoleIds, 'Stewards');
+  const removalNote = defendantRemoved
+    ? 'The driver has been removed from this channel.'
+    : 'The bot could not remove the driver from this channel; check bot permissions.';
   const reviewMessage = allDone
-    ? `${mention} All defendants have submitted their defence. This incident is now awaiting your review.`
-    : `${mention} A defence has been submitted. The driver has been removed from this channel.`;
+    ? `${mention} All defendants have submitted their defence. This incident is now awaiting your review. ${removalNote}`
+    : `${mention} A defence has been submitted. ${removalNote}`;
 
   await channel.send(reviewMessage);
 
   await modalSubmit.editReply({
-    content: 'Your defence has been submitted. You have been removed from the incident channel.',
+    content: defendantRemoved
+      ? 'Your defence has been submitted. You have been removed from the incident channel.'
+      : 'Your defence has been submitted, but I could not remove you from the incident channel. A steward has been notified.',
   });
 }

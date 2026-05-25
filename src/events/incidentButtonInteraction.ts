@@ -32,6 +32,14 @@ interface EvidenceFile {
   url: string;
 }
 
+const INCIDENT_WRITE_PERMISSION_DENIES = [
+  PermissionFlagsBits.SendMessages,
+  PermissionFlagsBits.SendMessagesInThreads,
+  PermissionFlagsBits.CreatePublicThreads,
+  PermissionFlagsBits.CreatePrivateThreads,
+  PermissionFlagsBits.AddReactions,
+];
+
 export async function handleIncidentButtonInteraction(
   interaction: ButtonInteraction,
   client: Client,
@@ -171,7 +179,7 @@ export async function handleIncidentButtonInteraction(
         {
           id: guild.roles.everyone.id,
           type: OverwriteType.Role,
-          deny: [PermissionFlagsBits.ViewChannel],
+          deny: [PermissionFlagsBits.ViewChannel, ...INCIDENT_WRITE_PERMISSION_DENIES],
         },
         {
           id: client.user!.id,
@@ -187,7 +195,7 @@ export async function handleIncidentButtonInteraction(
           id: user.id,
           type: OverwriteType.Member as const,
           allow: [PermissionFlagsBits.ViewChannel],
-          deny: [PermissionFlagsBits.SendMessages],
+          deny: INCIDENT_WRITE_PERMISSION_DENIES,
         })),
       ],
     };

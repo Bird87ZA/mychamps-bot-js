@@ -42,6 +42,13 @@ const DEFAULT_BUTTON_LABEL = 'Report Incident';
 const DEFAULT_BUTTON_COLOR = 'Red';
 const DEFAULT_BUTTON_MESSAGE =
   'Click the button below to report an incident. You will be asked to provide details.';
+const INCIDENT_CHANNEL_LOCK_PERMISSIONS = {
+  SendMessages: false,
+  SendMessagesInThreads: false,
+  CreatePublicThreads: false,
+  CreatePrivateThreads: false,
+  AddReactions: false,
+} as const;
 
 const SETUP_FIELD_IDS = {
   championship: 'incident_setup_championship',
@@ -356,6 +363,16 @@ function isMissingAccessError(error: unknown): boolean {
   return errorWithCode.code === 50001 || errorWithCode.rawError?.code === 50001;
 }
 
+function isMissingPermissionsError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const errorWithCode = error as { code?: unknown; rawError?: { code?: unknown } };
+
+  return errorWithCode.code === 50013 || errorWithCode.rawError?.code === 50013;
+}
+
 function formatIncidentSetupPostError(channelId: string, error: unknown): string {
   const permissionsMessage = [
     `I couldn't post the incident report button in <#${channelId}>.`,
@@ -370,6 +387,19 @@ function formatIncidentSetupPostError(channelId: string, error: unknown): string
   return [
     permissionsMessage,
     'Discord rejected the message unexpectedly; check the bot role permissions and channel overrides.',
+  ].join('\n');
+}
+
+function formatIncidentPermissionEditError(action: string, error: unknown): string {
+  const baseMessage = `I could not ${action} because Discord rejected the channel permission update.`;
+
+  if (!isMissingPermissionsError(error)) {
+    return `${baseMessage} Please check the bot logs and channel permission overrides.`;
+  }
+
+  return [
+    baseMessage,
+    'Grant the bot `Manage Roles` and `Manage Channels`, and make sure the bot role is above the roles it needs to manage.',
   ].join('\n');
 }
 
@@ -733,16 +763,22 @@ async function handleClose(
   if (channel && 'permissionOverwrites' in channel) {
     try {
       await channel.permissionOverwrites.edit(interaction.guild!.roles.everyone, {
-        SendMessages: false,
+        ...INCIDENT_CHANNEL_LOCK_PERMISSIONS,
       });
       for (const roleId of ticketAccessRoleIds) {
         await channel.permissionOverwrites.edit(roleId, {
           ViewChannel: true,
-          SendMessages: false,
+          ...INCIDENT_CHANNEL_LOCK_PERMISSIONS,
         });
       }
     } catch (err) {
       console.error('[IncidentClose] Failed to lock channel:', err);
+      await modalSubmit
+        .followUp({
+          content: formatIncidentPermissionEditError('lock the incident channel', err),
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => undefined);
     }
   }
 
