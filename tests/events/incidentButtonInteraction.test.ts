@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleIncidentButtonInteraction } from '../../src/events/incidentButtonInteraction';
 import { prisma } from '../../src/database';
 import { createMockInteraction, createMockClient } from '../mocks/discord';
+import { PermissionFlagsBits } from 'discord.js';
 
 const mockPrisma = vi.mocked(prisma);
 
@@ -232,6 +233,27 @@ describe('handleIncidentButtonInteraction', () => {
         expect.objectContaining({ id: 'channel-role-a' }),
         expect.objectContaining({ id: 'driver-user-a' }),
         expect.objectContaining({ id: 'driver-user-b' }),
+      ]),
+    );
+    const permissionOverwrites = mockCreateChannel.mock.calls[0][0].permissionOverwrites;
+    const driverOverwrite = permissionOverwrites.find(
+      (overwrite: { id: string }) => overwrite.id === 'driver-user-a',
+    );
+    expect(driverOverwrite.allow).toEqual(
+      expect.arrayContaining([PermissionFlagsBits.ViewChannel]),
+    );
+    expect(driverOverwrite.allow).not.toEqual(
+      expect.arrayContaining([PermissionFlagsBits.SendMessages]),
+    );
+    expect(driverOverwrite.deny).toEqual(
+      expect.arrayContaining([PermissionFlagsBits.SendMessages]),
+    );
+    expect(permissionOverwrites).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'user1',
+          allow: expect.arrayContaining([PermissionFlagsBits.ViewChannel]),
+        }),
       ]),
     );
     expect(mockCreateChannel.mock.calls[0][0].name).toBe('incident-0004');

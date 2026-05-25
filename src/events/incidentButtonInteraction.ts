@@ -186,13 +186,9 @@ export async function handleIncidentButtonInteraction(
         ...selectedDriverUsers.map((user) => ({
           id: user.id,
           type: OverwriteType.Member as const,
-          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
+          allow: [PermissionFlagsBits.ViewChannel],
+          deny: [PermissionFlagsBits.SendMessages],
         })),
-        {
-          id: interaction.user.id,
-          type: OverwriteType.Member,
-          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
-        },
       ],
     };
 
