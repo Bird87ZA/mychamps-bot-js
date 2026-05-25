@@ -1,11 +1,13 @@
 import {
   ActionRowBuilder,
   ButtonBuilder,
+  ButtonInteraction,
   ButtonStyle,
   ChannelSelectMenuBuilder,
   ChannelType,
   ChatInputCommandInteraction,
   Client,
+  ComponentType,
   EmbedBuilder,
   LabelBuilder,
   MessageFlags,
@@ -24,51 +26,114 @@ import { prisma } from '../database';
 import { ChampionshipSummary, MyChampsApiClient } from '../services/myChampsApiClient';
 import { getTicketAccessRoleIds } from '../utils/incidentSettings';
 
-const BUTTON_COLOR_MAP: Record<string, ButtonStyle> = {
-  Primary: ButtonStyle.Primary,
-  Secondary: ButtonStyle.Secondary,
-  Success: ButtonStyle.Success,
-  Danger: ButtonStyle.Danger,
-};
+interface IncidentButtonColorOption {
+  label: string;
+  value: string;
+  description: string;
+  emoji: string;
+  buttonStyle: ButtonStyle;
+  embedColor: number;
+}
 
 const SETUP_MODAL_CUSTOM_ID = 'incident_setup_modal';
+const SETUP_ROLES_MODAL_CUSTOM_ID = 'incident_setup_roles_modal';
+const SETUP_CONTINUE_CUSTOM_ID = 'incident_setup_continue';
 const DEFAULT_BUTTON_LABEL = 'Report Incident';
-const DEFAULT_BUTTON_COLOR = 'Danger';
+const DEFAULT_BUTTON_COLOR = 'Red';
+const DEFAULT_BUTTON_MESSAGE =
+  'Click the button below to report an incident. You will be asked to provide details.';
 
 const SETUP_FIELD_IDS = {
   championship: 'incident_setup_championship',
   buttonLabel: 'incident_setup_button_label',
   buttonColor: 'incident_setup_button_color',
+  buttonMessage: 'incident_setup_button_message',
   stewardRoles: 'incident_setup_steward_roles',
+  channelRoles: 'incident_setup_channel_roles',
   channelGroup: 'incident_setup_channel_group',
 } as const;
 
-const BUTTON_COLOR_OPTIONS = [
+const BUTTON_COLOR_OPTIONS: IncidentButtonColorOption[] = [
   {
     label: 'Blue',
-    value: 'Primary',
-    description: 'Primary button style',
+    value: 'Blue',
+    description: 'Blue embed, primary button style',
     emoji: '🔵',
+    buttonStyle: ButtonStyle.Primary,
+    embedColor: 0x3498db,
   },
   {
     label: 'Grey',
-    value: 'Secondary',
-    description: 'Secondary button style',
+    value: 'Grey',
+    description: 'Grey embed, secondary button style',
     emoji: '⚪',
+    buttonStyle: ButtonStyle.Secondary,
+    embedColor: 0x95a5a6,
   },
   {
     label: 'Green',
-    value: 'Success',
-    description: 'Success button style',
+    value: 'Green',
+    description: 'Green embed, success button style',
     emoji: '🟢',
+    buttonStyle: ButtonStyle.Success,
+    embedColor: 0x2ecc71,
   },
   {
     label: 'Red',
-    value: 'Danger',
-    description: 'Danger button style',
+    value: 'Red',
+    description: 'Red embed, danger button style',
     emoji: '🔴',
+    buttonStyle: ButtonStyle.Danger,
+    embedColor: 0xe74c3c,
   },
-] as const;
+  {
+    label: 'Purple',
+    value: 'Purple',
+    description: 'Purple embed, primary button style',
+    emoji: '🟣',
+    buttonStyle: ButtonStyle.Primary,
+    embedColor: 0x9b59b6,
+  },
+  {
+    label: 'Orange',
+    value: 'Orange',
+    description: 'Orange embed, danger button style',
+    emoji: '🟠',
+    buttonStyle: ButtonStyle.Danger,
+    embedColor: 0xe67e22,
+  },
+  {
+    label: 'Yellow',
+    value: 'Yellow',
+    description: 'Yellow embed, success button style',
+    emoji: '🟡',
+    buttonStyle: ButtonStyle.Success,
+    embedColor: 0xf1c40f,
+  },
+  {
+    label: 'Teal',
+    value: 'Teal',
+    description: 'Teal embed, primary button style',
+    emoji: '🟦',
+    buttonStyle: ButtonStyle.Primary,
+    embedColor: 0x1abc9c,
+  },
+  {
+    label: 'Pink',
+    value: 'Pink',
+    description: 'Pink embed, danger button style',
+    emoji: '🌸',
+    buttonStyle: ButtonStyle.Danger,
+    embedColor: 0xe91e63,
+  },
+];
+
+const BUTTON_COLOR_ALIASES: Record<string, string> = {
+  Primary: 'Blue',
+  Secondary: 'Grey',
+  Success: 'Green',
+  Danger: 'Red',
+};
 
 function getChampionshipCreatedAtTimestamp(championship: ChampionshipSummary): number {
   const timestamp = Date.parse(championship.created_at ?? '');
@@ -130,6 +195,28 @@ function truncateSelectText(value: string): string {
   return value.length > 100 ? value.slice(0, 97) + '...' : value;
 }
 
+function getButtonColorOption(value: string): IncidentButtonColorOption {
+  const normalizedValue = BUTTON_COLOR_ALIASES[value] ?? value;
+
+  return (
+    BUTTON_COLOR_OPTIONS.find((option) => option.value === normalizedValue) ??
+    BUTTON_COLOR_OPTIONS.find((option) => option.value === DEFAULT_BUTTON_COLOR) ??
+    BUTTON_COLOR_OPTIONS[0]
+  );
+}
+
+function normalizeButtonColor(value: string): string {
+  return getButtonColorOption(value).value;
+}
+
+function getButtonStyle(value: string): ButtonStyle {
+  return getButtonColorOption(value).buttonStyle;
+}
+
+function getEmbedColor(value: string): number {
+  return getButtonColorOption(value).embedColor;
+}
+
 function buildIncidentSetupModal(championships: ChampionshipSummary[]): ModalBuilder {
   const championshipSelect = new StringSelectMenuBuilder()
     .setCustomId(SETUP_FIELD_IDS.championship)
@@ -153,7 +240,7 @@ function buildIncidentSetupModal(championships: ChampionshipSummary[]): ModalBui
 
   const buttonColorSelect = new StringSelectMenuBuilder()
     .setCustomId(SETUP_FIELD_IDS.buttonColor)
-    .setPlaceholder('Select a button color')
+    .setPlaceholder('Select a color')
     .setMinValues(1)
     .setMaxValues(1)
     .setRequired(true)
@@ -164,12 +251,12 @@ function buildIncidentSetupModal(championships: ChampionshipSummary[]): ModalBui
       })),
     );
 
-  const stewardRolesSelect = new RoleSelectMenuBuilder()
-    .setCustomId(SETUP_FIELD_IDS.stewardRoles)
-    .setPlaceholder('Select steward roles')
-    .setMinValues(1)
-    .setMaxValues(25)
-    .setRequired(true);
+  const buttonMessageInput = new TextInputBuilder()
+    .setCustomId(SETUP_FIELD_IDS.buttonMessage)
+    .setStyle(TextInputStyle.Paragraph)
+    .setValue(DEFAULT_BUTTON_MESSAGE)
+    .setRequired(true)
+    .setMaxLength(1000);
 
   const channelGroupSelect = new ChannelSelectMenuBuilder()
     .setCustomId(SETUP_FIELD_IDS.channelGroup)
@@ -193,16 +280,46 @@ function buildIncidentSetupModal(championships: ChampionshipSummary[]): ModalBui
         .setTextInputComponent(buttonLabelInput),
       new LabelBuilder()
         .setLabel('Button Color')
-        .setDescription('Discord buttons support four predefined styles')
+        .setDescription('Some colors use the nearest Discord button style')
         .setStringSelectMenuComponent(buttonColorSelect),
       new LabelBuilder()
-        .setLabel('Stewards Role')
-        .setDescription('Roles that can view the created incident channel')
-        .setRoleSelectMenuComponent(stewardRolesSelect),
+        .setLabel('Button Message')
+        .setDescription('Text shown above the incident report button')
+        .setTextInputComponent(buttonMessageInput),
       new LabelBuilder()
         .setLabel('Channel Group')
         .setDescription('Category where new incident channels are created')
         .setChannelSelectMenuComponent(channelGroupSelect),
+    );
+}
+
+function buildIncidentSetupRolesModal(): ModalBuilder {
+  const stewardRolesSelect = new RoleSelectMenuBuilder()
+    .setCustomId(SETUP_FIELD_IDS.stewardRoles)
+    .setPlaceholder('Select steward roles')
+    .setMinValues(1)
+    .setMaxValues(25)
+    .setRequired(true);
+
+  const channelRolesSelect = new RoleSelectMenuBuilder()
+    .setCustomId(SETUP_FIELD_IDS.channelRoles)
+    .setPlaceholder('Select additional channel roles')
+    .setMinValues(0)
+    .setMaxValues(25)
+    .setRequired(false);
+
+  return new ModalBuilder()
+    .setCustomId(SETUP_ROLES_MODAL_CUSTOM_ID)
+    .setTitle('Incident Channel Access')
+    .addLabelComponents(
+      new LabelBuilder()
+        .setLabel('Stewards Role')
+        .setDescription('Roles tagged when a defence is submitted')
+        .setRoleSelectMenuComponent(stewardRolesSelect),
+      new LabelBuilder()
+        .setLabel('Roles to Add to Channel')
+        .setDescription('Additional roles that can view the incident channel')
+        .setRoleSelectMenuComponent(channelRolesSelect),
     );
 }
 
@@ -211,7 +328,12 @@ function getFirstStringSelectValue(modalSubmit: ModalSubmitInteraction, customId
 }
 
 function getSelectedRoleIds(modalSubmit: ModalSubmitInteraction, customId: string): string[] {
-  const roles = modalSubmit.fields.getSelectedRoles(customId, true);
+  let roles;
+  try {
+    roles = modalSubmit.fields.getSelectedRoles(customId, true);
+  } catch {
+    return [];
+  }
 
   return Array.from(roles.keys());
 }
@@ -222,10 +344,6 @@ function getSelectedChannelId(modalSubmit: ModalSubmitInteraction, customId: str
   ]);
 
   return Array.from(channels.keys())[0] ?? '';
-}
-
-function normalizeButtonColor(value: string): string {
-  return value in BUTTON_COLOR_MAP ? value : DEFAULT_BUTTON_COLOR;
 }
 
 export const incidentCommand: BotCommand = {
@@ -349,9 +467,52 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
   const buttonColor = normalizeButtonColor(
     getFirstStringSelectValue(modalSubmit, SETUP_FIELD_IDS.buttonColor),
   );
-  const buttonStyle = BUTTON_COLOR_MAP[buttonColor];
-  const stewardRoleIds = getSelectedRoleIds(modalSubmit, SETUP_FIELD_IDS.stewardRoles);
+  const buttonMessage =
+    modalSubmit.fields.getTextInputValue(SETUP_FIELD_IDS.buttonMessage).trim() ||
+    DEFAULT_BUTTON_MESSAGE;
   const incidentCategoryId = getSelectedChannelId(modalSubmit, SETUP_FIELD_IDS.channelGroup);
+
+  const continueButton = new ButtonBuilder()
+    .setCustomId(SETUP_CONTINUE_CUSTOM_ID)
+    .setLabel('Continue Setup')
+    .setStyle(ButtonStyle.Primary);
+  const continueRow = new ActionRowBuilder<ButtonBuilder>().addComponents(continueButton);
+  const continueMessage = await modalSubmit.editReply({
+    content: 'Continue to select steward roles and any extra roles that should access incidents.',
+    components: [continueRow],
+  });
+
+  let continueInteraction: ButtonInteraction;
+  try {
+    continueInteraction = (await continueMessage.awaitMessageComponent({
+      componentType: ComponentType.Button,
+      filter: (i) => i.customId === SETUP_CONTINUE_CUSTOM_ID && i.user.id === interaction.user.id,
+      time: 300_000,
+    })) as ButtonInteraction;
+  } catch {
+    await modalSubmit.editReply({ content: 'Setup timed out.', components: [] });
+    return;
+  }
+
+  await continueInteraction.showModal(buildIncidentSetupRolesModal());
+
+  let rolesModalSubmit: ModalSubmitInteraction;
+  try {
+    rolesModalSubmit = await continueInteraction.awaitModalSubmit({
+      filter: (i) =>
+        i.customId === SETUP_ROLES_MODAL_CUSTOM_ID && i.user.id === interaction.user.id,
+      time: 300_000,
+    });
+  } catch {
+    await modalSubmit.editReply({ content: 'Setup timed out.', components: [] });
+    return;
+  }
+
+  await rolesModalSubmit.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const stewardRoleIds = getSelectedRoleIds(rolesModalSubmit, SETUP_FIELD_IDS.stewardRoles);
+  const channelRoleIds = getSelectedRoleIds(rolesModalSubmit, SETUP_FIELD_IDS.channelRoles);
+  const buttonStyle = getButtonStyle(buttonColor);
 
   // Build and post the incident button
   const button = new ButtonBuilder()
@@ -363,10 +524,8 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
 
   const embed = new EmbedBuilder()
     .setTitle(`${selectedChampionship?.name ?? selectedSlug} — Incident Reporting`)
-    .setDescription(
-      'Click the button below to report an incident. You will be asked to provide details.',
-    )
-    .setColor(0xe74c3c);
+    .setDescription(buttonMessage)
+    .setColor(getEmbedColor(buttonColor));
 
   const postedMessage = await channel.send({ embeds: [embed], components: [buttonRow] });
 
@@ -379,12 +538,21 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
       championshipSlug: selectedSlug,
       incidentCategoryId,
       stewardRoleIds,
+      channelRoleIds,
+      buttonMessage,
       buttonLabel,
       buttonColor,
     },
   });
 
-  await modalSubmit.editReply({
+  await modalSubmit
+    .editReply({
+      content: `Incident report button posted successfully in <#${channel.id}>.`,
+      components: [],
+    })
+    .catch(() => undefined);
+
+  await rolesModalSubmit.editReply({
     content: `Incident report button posted successfully in <#${channel.id}>.`,
   });
 }

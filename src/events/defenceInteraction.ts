@@ -4,12 +4,37 @@ import {
   ButtonInteraction,
   ButtonStyle,
   Client,
+  EmbedBuilder,
+  FileUploadBuilder,
+  LabelBuilder,
   Message,
   MessageFlags,
+  ModalBuilder,
+  ModalSubmitInteraction,
   TextChannel,
+  TextInputBuilder,
+  TextInputStyle,
 } from 'discord.js';
 import { prisma } from '../database';
-import { formatRoleMentions, getTicketAccessRoleIds } from '../utils/incidentSettings';
+import {
+  formatRoleMentions,
+  getTicketAccessRoleIds,
+  parseSettingIds,
+} from '../utils/incidentSettings';
+
+interface DefenceFile {
+  name: string;
+  url: string;
+}
+
+const DEFENCE_MODAL_PREFIX = 'incident_defence_modal';
+const DEFENCE_FIELD_IDS = {
+  answer: 'defence_answer',
+  url: 'defence_url',
+  additionalUrlOne: 'defence_additional_url_1',
+  additionalUrlTwo: 'defence_additional_url_2',
+  file: 'defence_file',
+} as const;
 
 /**
  * Called when a new message is created in a guild channel.
@@ -60,6 +85,98 @@ export async function handleDefenceMessage(message: Message, _client: Client): P
   });
 }
 
+function buildDefenceModal(incidentId: number): ModalBuilder {
+  const answerInput = new TextInputBuilder()
+    .setCustomId(DEFENCE_FIELD_IDS.answer)
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true)
+    .setMaxLength(2000);
+
+  const urlInput = new TextInputBuilder()
+    .setCustomId(DEFENCE_FIELD_IDS.url)
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false)
+    .setMaxLength(500)
+    .setPlaceholder('https://...');
+
+  const additionalUrlOneInput = new TextInputBuilder()
+    .setCustomId(DEFENCE_FIELD_IDS.additionalUrlOne)
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false)
+    .setMaxLength(500)
+    .setPlaceholder('https://...');
+
+  const additionalUrlTwoInput = new TextInputBuilder()
+    .setCustomId(DEFENCE_FIELD_IDS.additionalUrlTwo)
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false)
+    .setMaxLength(500)
+    .setPlaceholder('https://...');
+
+  const fileInput = new FileUploadBuilder()
+    .setCustomId(DEFENCE_FIELD_IDS.file)
+    .setRequired(false)
+    .setMinValues(0)
+    .setMaxValues(1);
+
+  return new ModalBuilder()
+    .setCustomId(`${DEFENCE_MODAL_PREFIX}!${incidentId}`)
+    .setTitle('Submit Defence')
+    .addLabelComponents(
+      new LabelBuilder().setLabel('Answer').setTextInputComponent(answerInput),
+      new LabelBuilder().setLabel('Link').setTextInputComponent(urlInput),
+      new LabelBuilder().setLabel('Additional View').setTextInputComponent(additionalUrlOneInput),
+      new LabelBuilder().setLabel('Additional View').setTextInputComponent(additionalUrlTwoInput),
+      new LabelBuilder()
+        .setLabel('File')
+        .setDescription('Optional screenshot, clip, or supporting file')
+        .setFileUploadComponent(fileInput),
+    );
+}
+
+function getOptionalTextInput(modalSubmit: ModalSubmitInteraction, customId: string): string {
+  try {
+    return modalSubmit.fields.getTextInputValue(customId).trim();
+  } catch {
+    return '';
+  }
+}
+
+function getDefenceFiles(modalSubmit: ModalSubmitInteraction): DefenceFile[] {
+  try {
+    return Array.from(modalSubmit.fields.getUploadedFiles(DEFENCE_FIELD_IDS.file)?.values() ?? [])
+      .map((file) => ({ name: file.name, url: file.url }))
+      .filter((file) => file.name && file.url);
+  } catch {
+    return [];
+  }
+}
+
+function formatDefenceFiles(files: DefenceFile[]): string | null {
+  if (files.length === 0) {
+    return null;
+  }
+
+  const value = files.map((file) => `[${file.name}](${file.url})`).join('\n');
+
+  return value.length > 1024 ? value.slice(0, 1021) + '...' : value;
+}
+
+function parseStoredRoleIds(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .filter((roleId): roleId is string => typeof roleId === 'string')
+      .map((roleId) => roleId.trim())
+      .filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    return parseSettingIds(value);
+  }
+
+  return [];
+}
+
 /**
  * Handle the Yes/No defence done buttons.
  */
@@ -82,7 +199,6 @@ export async function handleDefenceDoneInteraction(
     return;
   }
 
-  // Yes — mark defence submitted
   const parts = customId.split('!');
   const incidentId = parseInt(parts[1], 10);
 
@@ -107,6 +223,14 @@ export async function handleDefenceDoneInteraction(
   const defenceSubmitted = (incident.defenceSubmitted as string[]) ?? [];
   const userId = interaction.user.id;
 
+  if (!defendants.includes(userId)) {
+    await interaction.reply({
+      content: 'Only selected drivers can submit a defence for this incident.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
   if (defenceSubmitted.includes(userId)) {
     await interaction.reply({
       content: 'You have already submitted your defence.',
@@ -115,21 +239,66 @@ export async function handleDefenceDoneInteraction(
     return;
   }
 
-  const updatedDefence = [...defenceSubmitted, userId];
+  await interaction.showModal(buildDefenceModal(incident.id));
 
-  // Revoke send permission for this defendant
+  let modalSubmit: ModalSubmitInteraction;
+  try {
+    modalSubmit = await interaction.awaitModalSubmit({
+      filter: (i) =>
+        i.customId === `${DEFENCE_MODAL_PREFIX}!${incident.id}` &&
+        i.user.id === interaction.user.id,
+      time: 300_000,
+    });
+  } catch {
+    return;
+  }
+
+  await modalSubmit.deferReply({ flags: MessageFlags.Ephemeral });
+
   const channel = interaction.channel as TextChannel | null;
+  if (!channel || !('send' in channel)) {
+    await modalSubmit.editReply({
+      content: 'Could not post your defence because this channel is unavailable.',
+    });
+    return;
+  }
+
+  const answer =
+    modalSubmit.fields.getTextInputValue(DEFENCE_FIELD_IDS.answer).trim() || 'No answer provided.';
+  const url = getOptionalTextInput(modalSubmit, DEFENCE_FIELD_IDS.url);
+  const additionalUrlOne = getOptionalTextInput(modalSubmit, DEFENCE_FIELD_IDS.additionalUrlOne);
+  const additionalUrlTwo = getOptionalTextInput(modalSubmit, DEFENCE_FIELD_IDS.additionalUrlTwo);
+  const files = getDefenceFiles(modalSubmit);
+  const fileValue = formatDefenceFiles(files);
+
+  const embed = new EmbedBuilder()
+    .setTitle('Driver Defence')
+    .addFields(
+      { name: 'Submitted By', value: `<@${userId}>`, inline: true },
+      { name: 'Answer', value: answer },
+      ...(url ? [{ name: 'Link', value: url }] : []),
+      ...(additionalUrlOne ? [{ name: 'Additional View', value: additionalUrlOne }] : []),
+      ...(additionalUrlTwo ? [{ name: 'Additional View', value: additionalUrlTwo }] : []),
+      ...(fileValue ? [{ name: 'File', value: fileValue }] : []),
+    )
+    .setColor(0x95a5a6)
+    .setTimestamp();
+
+  await channel.send({ embeds: [embed] });
+
+  const updatedDefence = [...defenceSubmitted, userId];
+  const allDone = defendants.length > 0 && updatedDefence.length >= defendants.length;
+
   if (channel && 'permissionOverwrites' in channel) {
     try {
       await channel.permissionOverwrites.edit(userId, {
+        ViewChannel: false,
         SendMessages: false,
       });
     } catch (err) {
-      console.error('[Defence] Failed to revoke send permissions:', err);
+      console.error('[Defence] Failed to remove defendant permissions:', err);
     }
   }
-
-  const allDone = defendants.length > 0 && updatedDefence.length >= defendants.length;
 
   await prisma.incident.update({
     where: { id: incident.id },
@@ -139,16 +308,17 @@ export async function handleDefenceDoneInteraction(
     },
   });
 
-  await interaction.reply({
-    content: 'Your defence has been recorded. You can no longer send messages in this channel.',
-    flags: MessageFlags.Ephemeral,
-  });
+  const savedStewardRoleIds = parseStoredRoleIds(incident.stewardRoleIds);
+  const stewardRoleIds =
+    savedStewardRoleIds.length > 0 ? savedStewardRoleIds : await getTicketAccessRoleIds(guildId);
+  const mention = formatRoleMentions(stewardRoleIds, 'Stewards');
+  const reviewMessage = allDone
+    ? `${mention} All defendants have submitted their defence. This incident is now awaiting your review.`
+    : `${mention} A defence has been submitted. The driver has been removed from this channel.`;
 
-  if (allDone && channel) {
-    const ticketAccessRoleIds = await getTicketAccessRoleIds(guildId);
-    const mention = formatRoleMentions(ticketAccessRoleIds);
-    await channel.send(
-      `${mention} All defendants have submitted their defence. This incident is now awaiting your review.`,
-    );
-  }
+  await channel.send(reviewMessage);
+
+  await modalSubmit.editReply({
+    content: 'Your defence has been submitted. You have been removed from the incident channel.',
+  });
 }
