@@ -113,8 +113,10 @@ model IncidentButton {
   championshipSlug   String   @map("championship_slug")
   incidentCategoryId String?  @map("incident_category_id")
   stewardRoleIds     Json     @default("[]") @map("steward_role_ids") @db.Json
+  channelRoleIds     Json     @default("[]") @map("channel_role_ids") @db.Json
+  buttonMessage      String   @map("button_message") @db.Text
   buttonLabel        String   @default("Report Incident") @map("button_label")
-  buttonColor        String   @default("Danger") @map("button_color")
+  buttonColor        String   @default("Red") @map("button_color")
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
@@ -129,6 +131,7 @@ model Incident {
   mychampsIncidentId Int?      @map("mychamps_incident_id")
   championshipSlug   String    @map("championship_slug")
   defendants         Json      @db.Json
+  stewardRoleIds     Json      @default("[]") @map("steward_role_ids") @db.Json
   status             String    @default("open")
   defenceSubmitted   Json      @default("[]") @map("defence_submitted") @db.Json
   lastReminderAt     DateTime? @map("last_reminder_at")

@@ -151,6 +151,32 @@ describe('handleDefenceDoneInteraction', () => {
       guild: { name: 'Test Guild' },
       channel: null,
       reply: vi.fn(),
+      showModal: vi.fn(),
+      awaitModalSubmit: vi.fn().mockRejectedValue(new Error('timeout')),
+      ...overrides,
+    };
+  }
+
+  function createMockDefenceModalSubmit(overrides: Record<string, unknown> = {}) {
+    return {
+      fields: {
+        getTextInputValue: vi.fn((field: string) => {
+          if (field === 'defence_answer') return 'I held my line through turn 1.';
+          if (field === 'defence_url') return 'https://example.com/defence';
+          if (field === 'defence_additional_url_1') return 'https://example.com/view-1';
+          if (field === 'defence_additional_url_2') return '';
+          return '';
+        }),
+        getUploadedFiles: vi.fn(
+          () =>
+            new Map([
+              ['file-1', { name: 'defence.png', url: 'https://cdn.discordapp.com/defence.png' }],
+            ]),
+        ),
+      },
+      deferReply: vi.fn(),
+      editReply: vi.fn(),
+      user: { id: 'user1' },
       ...overrides,
     };
   }
@@ -194,6 +220,7 @@ describe('handleDefenceDoneInteraction', () => {
   });
 
   it('marks defence submitted and updates status to awaiting_review when all done', async () => {
+    const mockModalSubmit = createMockDefenceModalSubmit();
     const mockChannel = {
       type: 0,
       id: '987654321',
@@ -204,6 +231,7 @@ describe('handleDefenceDoneInteraction', () => {
     const interaction = createMockButtonInteraction({
       customId: 'defence_done_yes!1',
       channel: mockChannel,
+      awaitModalSubmit: vi.fn().mockResolvedValue(mockModalSubmit),
     });
     const client = createMockClient();
 
@@ -214,6 +242,7 @@ describe('handleDefenceDoneInteraction', () => {
       mychampsIncidentId: null,
       championshipSlug: 'champ-a',
       defendants: ['user1'],
+      stewardRoleIds: ['steward-role-a'],
       status: 'open',
       defenceSubmitted: [],
       lastReminderAt: null,
@@ -226,6 +255,31 @@ describe('handleDefenceDoneInteraction', () => {
 
     await handleDefenceDoneInteraction(interaction as never, client as never);
 
+    expect(interaction.showModal).toHaveBeenCalled();
+    expect(mockChannel.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        embeds: expect.arrayContaining([
+          expect.objectContaining({
+            data: expect.objectContaining({
+              fields: expect.arrayContaining([
+                expect.objectContaining({
+                  name: 'Answer',
+                  value: 'I held my line through turn 1.',
+                }),
+                expect.objectContaining({
+                  name: 'File',
+                  value: expect.stringContaining('defence.png'),
+                }),
+              ]),
+            }),
+          }),
+        ]),
+      }),
+    );
+    expect(mockChannel.permissionOverwrites.edit).toHaveBeenCalledWith('user1', {
+      ViewChannel: false,
+      SendMessages: false,
+    });
     expect(mockPrisma.incident.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 1 },
@@ -235,9 +289,14 @@ describe('handleDefenceDoneInteraction', () => {
         }),
       }),
     );
+    expect(mockChannel.send).toHaveBeenCalledWith(expect.stringContaining('<@&steward-role-a>'));
+    expect(mockModalSubmit.editReply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('defence has been submitted') }),
+    );
   });
 
   it('sets status to open (not awaiting_review) when not all defendants done', async () => {
+    const mockModalSubmit = createMockDefenceModalSubmit();
     const mockChannel = {
       type: 0,
       id: '987654321',
@@ -248,6 +307,7 @@ describe('handleDefenceDoneInteraction', () => {
     const interaction = createMockButtonInteraction({
       customId: 'defence_done_yes!1',
       channel: mockChannel,
+      awaitModalSubmit: vi.fn().mockResolvedValue(mockModalSubmit),
     });
     const client = createMockClient();
 
@@ -258,6 +318,7 @@ describe('handleDefenceDoneInteraction', () => {
       mychampsIncidentId: null,
       championshipSlug: 'champ-a',
       defendants: ['user1', 'user2'],
+      stewardRoleIds: ['steward-role-a'],
       status: 'open',
       defenceSubmitted: [],
       lastReminderAt: null,
@@ -279,7 +340,8 @@ describe('handleDefenceDoneInteraction', () => {
     );
   });
 
-  it('sends ticket access role mentions when all defendants have submitted', async () => {
+  it('falls back to ticket access role mentions when no steward roles are saved', async () => {
+    const mockModalSubmit = createMockDefenceModalSubmit();
     const mockSend = vi.fn();
     const mockChannel = {
       type: 0,
@@ -291,6 +353,7 @@ describe('handleDefenceDoneInteraction', () => {
     const interaction = createMockButtonInteraction({
       customId: 'defence_done_yes!1',
       channel: mockChannel,
+      awaitModalSubmit: vi.fn().mockResolvedValue(mockModalSubmit),
     });
     const client = createMockClient();
 
@@ -301,6 +364,7 @@ describe('handleDefenceDoneInteraction', () => {
       mychampsIncidentId: null,
       championshipSlug: 'champ-a',
       defendants: ['user1'],
+      stewardRoleIds: [],
       status: 'open',
       defenceSubmitted: [],
       lastReminderAt: null,
