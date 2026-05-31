@@ -307,7 +307,9 @@ describe('settingsCommand', () => {
     await settingsCommand.execute(interaction as never, client as never);
 
     expect(modalSubmit.editReply).toHaveBeenCalledWith(
-      expect.objectContaining({ content: 'Invalid timezone: Invalid/Zone' }),
+      expect.objectContaining({
+        content: expect.stringContaining('Invalid timezone: Invalid/Zone'),
+      }),
     );
     expect(setSetting).not.toHaveBeenCalled();
   });
@@ -322,7 +324,7 @@ describe('settingsCommand', () => {
     await settingsCommand.execute(interaction as never, client as never);
 
     expect(interaction.reply).toHaveBeenCalledWith(
-      expect.objectContaining({ content: 'Something went wrong' }),
+      expect.objectContaining({ content: expect.stringContaining('I could not open settings') }),
     );
   });
 

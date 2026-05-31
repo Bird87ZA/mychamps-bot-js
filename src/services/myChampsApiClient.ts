@@ -68,7 +68,7 @@ export class MyChampsApiClient {
     const token = await getSetting(guildId, 'mychamps-api-token');
 
     if (!token) {
-      throw new Error('mychamps-api-token is not configured for this guild.');
+      throw new Error('mychamps-api-token is not configured for this server.');
     }
 
     return new MyChampsApiClient(MYCHAMPS_API_BASE_URL, token);
@@ -83,13 +83,20 @@ export class MyChampsApiClient {
 
   private async request<T>(path: string, options?: RequestInit): Promise<T> {
     const url = `${this.baseUrl}${path}`;
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        ...this.headers,
-        ...(options?.headers as Record<string, string> | undefined),
-      },
-    });
+    let response: Response;
+
+    try {
+      response = await fetch(url, {
+        ...options,
+        headers: {
+          ...this.headers,
+          ...(options?.headers as Record<string, string> | undefined),
+        },
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? ` ${error.message}` : '';
+      throw new Error(`Could not reach MyChamps API.${detail}`.trim());
+    }
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');

@@ -263,11 +263,28 @@
       opacity: 0.5;
       pointer-events: none;
     }
+
+    .error-banner {
+      display: none;
+      margin-left: 0;
+      margin-right: 24px;
+      padding: 8px 12px;
+      border: 1px solid rgba(237, 66, 69, 0.45);
+      border-radius: 6px;
+      background: rgba(237, 66, 69, 0.12);
+      color: #ffb4b6;
+      font-size: 13px;
+    }
+
+    .error-banner.active {
+      display: block;
+    }
   </style>
 </head>
 <body>
   <header>
     <h1>MyChamps Bot</h1>
+    <div class="error-banner" id="dashboard-error"></div>
     <div class="stats" id="stats"></div>
   </header>
 
@@ -367,11 +384,30 @@
     }
 
     async function api(path, options = {}) {
-      const res = await fetch('/api' + path, {
+      const res = await fetch('api' + path, {
         headers: { 'Content-Type': 'application/json' },
         ...options,
       });
-      return res.json();
+      const payload = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(payload.message || payload.error || `Dashboard request failed with HTTP ${res.status}.`);
+      }
+
+      return payload;
+    }
+
+    function showError(error) {
+      const message = error instanceof Error ? error.message : String(error || 'Dashboard request failed.');
+      const banner = document.getElementById('dashboard-error');
+      banner.textContent = message;
+      banner.classList.add('active');
+    }
+
+    function clearError() {
+      const banner = document.getElementById('dashboard-error');
+      banner.textContent = '';
+      banner.classList.remove('active');
     }
 
     function showModal(title, data) {
@@ -619,35 +655,40 @@
     // ─── Actions ─────────────────────────────────────────────────────────────
     async function deleteSchedule(id) {
       if (!confirm('Delete this schedule and all its reminders?')) return;
-      await api(`/schedules/${id}`, { method: 'DELETE' });
-      loadAll();
+      await runAction(() => api(`/schedules/${id}`, { method: 'DELETE' }));
     }
 
     async function closeSchedule(id) {
       if (!confirm('Close this schedule?')) return;
-      await api(`/schedules/${id}`, {
+      await runAction(() => api(`/schedules/${id}`, {
         method: 'PUT',
         body: JSON.stringify({ closed: true }),
-      });
-      loadAll();
+      }));
     }
 
     async function deleteReminder(id) {
       if (!confirm('Delete this reminder?')) return;
-      await api(`/reminders/${id}`, { method: 'DELETE' });
-      loadAll();
+      await runAction(() => api(`/reminders/${id}`, { method: 'DELETE' }));
     }
 
     async function deleteAttendance(id) {
       if (!confirm('Delete this attendance configuration?')) return;
-      await api(`/attendance/${id}`, { method: 'DELETE' });
-      loadAll();
+      await runAction(() => api(`/attendance/${id}`, { method: 'DELETE' }));
     }
 
     async function deleteRandomiser(id) {
       if (!confirm('Delete this randomiser?')) return;
-      await api(`/randomisers/${id}`, { method: 'DELETE' });
-      loadAll();
+      await runAction(() => api(`/randomisers/${id}`, { method: 'DELETE' }));
+    }
+
+    async function runAction(action) {
+      try {
+        clearError();
+        await action();
+        await loadAll();
+      } catch (error) {
+        showError(error);
+      }
     }
 
     // ─── Escape HTML ─────────────────────────────────────────────────────────
@@ -659,13 +700,20 @@
     }
 
     // ─── Init ────────────────────────────────────────────────────────────────
-    function loadAll() {
-      loadStats();
-      loadSchedules();
-      loadReminders();
-      loadAttendance();
-      loadRandomisers();
-      loadSettings();
+    async function loadAll() {
+      try {
+        clearError();
+        await Promise.all([
+          loadStats(),
+          loadSchedules(),
+          loadReminders(),
+          loadAttendance(),
+          loadRandomisers(),
+          loadSettings(),
+        ]);
+      } catch (error) {
+        showError(error);
+      }
     }
 
     loadAll();

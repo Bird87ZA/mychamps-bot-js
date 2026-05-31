@@ -52,7 +52,7 @@ describe('handleIncidentButtonInteraction', () => {
 
     expect(interaction.reply).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: expect.stringContaining('Could not find'),
+        content: expect.stringContaining('no longer configured'),
       }),
     );
   });

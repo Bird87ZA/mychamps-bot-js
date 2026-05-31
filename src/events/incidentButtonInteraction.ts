@@ -25,6 +25,7 @@ import {
   getTicketAccessRoleIds,
   parseSettingIds,
 } from '../utils/incidentSettings';
+import { formatUserError } from '../utils/errors';
 import type { ButtonInteraction, Guild, StringSelectMenuInteraction, User } from 'discord.js';
 
 interface EvidenceFile {
@@ -56,7 +57,8 @@ export async function handleIncidentButtonInteraction(
 
   if (!incidentButton) {
     await interaction.reply({
-      content: 'Could not find the incident button configuration.',
+      content:
+        'This incident button is no longer configured. Ask an admin to run `/incident setup` again in this channel.',
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -132,12 +134,16 @@ export async function handleIncidentButtonInteraction(
   const guild = interaction.guild;
 
   if (!guild) {
-    await modalSubmit.editReply({ content: 'Could not resolve the server.' });
+    await modalSubmit.editReply({
+      content:
+        'I could not resolve this Discord server while creating the incident. This looks like a bot state issue; please try again.',
+    });
     return;
   }
 
   // Call API to create the incident
   let apiIncidentId: number | null = null;
+  let apiSyncWarning: string | null = null;
   try {
     const apiClient = await MyChampsApiClient.fromGuild(guildId);
     const result = await apiClient.createIncident({
@@ -150,6 +156,7 @@ export async function handleIncidentButtonInteraction(
     apiIncidentId = result?.id ?? null;
   } catch (err) {
     console.error('[IncidentReport] API error:', err);
+    apiSyncWarning = formatUserError(err, 'sync the incident to MyChamps');
   }
 
   // Resolve per-button setup, with global settings as a fallback for older buttons.
@@ -217,7 +224,7 @@ export async function handleIncidentButtonInteraction(
   } catch (err) {
     console.error('[IncidentReport] Failed to create channel:', err);
     await modalSubmit.editReply({
-      content: 'Failed to create the incident channel. Please contact an administrator.',
+      content: formatIncidentChannelCreateError(incidentCategoryId, err),
     });
     return;
   }
@@ -278,7 +285,12 @@ export async function handleIncidentButtonInteraction(
   console.log(`[IncidentReport] Created incident ${savedIncident.id} in #${channelName}`);
 
   await modalSubmit.editReply({
-    content: `Incident reported successfully. Channel created: <#${incidentChannel.id}>`,
+    content: [
+      `Incident reported successfully. Channel created: <#${incidentChannel.id}>`,
+      apiSyncWarning ? `Warning: ${apiSyncWarning}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n'),
   });
 }
 
@@ -360,6 +372,32 @@ function getSelectedDriverUsers(modalSubmit: ModalSubmitInteraction): User[] {
   } catch {
     return [];
   }
+}
+
+function isMissingPermissionsError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const errorWithCode = error as { code?: unknown; rawError?: { code?: unknown } };
+
+  return errorWithCode.code === 50013 || errorWithCode.rawError?.code === 50013;
+}
+
+function formatIncidentChannelCreateError(categoryId: string | null, error: unknown): string {
+  const target = categoryId ? ` in <#${categoryId}>` : '';
+
+  if (isMissingPermissionsError(error)) {
+    return [
+      `I could not create the incident channel${target} because Discord rejected the permission setup.`,
+      'Grant the bot `Manage Channels`, `View Channel`, and `Send Messages` on the incident category, and make sure the bot role is high enough to manage channel overwrites.',
+    ].join('\n');
+  }
+
+  return [
+    `I could not create the incident channel${target}.`,
+    'This looks like a bot or Discord server error; please try again or ask an admin to check the bot logs.',
+  ].join('\n');
 }
 
 function formatEvidenceValue(

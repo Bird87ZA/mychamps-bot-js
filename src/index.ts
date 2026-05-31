@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { Client, Collection, Events, GatewayIntentBits, MessageFlags } from 'discord.js';
 import { BotCommand, ServiceInterval } from './types';
 import { prisma } from './database';
+import { formatUserError } from './utils/errors';
 
 // Commands
 import { scheduleCommand } from './commands/schedule';
@@ -63,7 +64,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await command.execute(interaction, client);
     } catch (error) {
       console.error(`Error executing command ${interaction.commandName}:`, error);
-      const content = 'An error occurred.';
+      const content = formatUserError(error, `run /${interaction.commandName}`);
       if (interaction.replied || interaction.deferred) {
         await interaction.followUp({ content, flags: MessageFlags.Ephemeral });
       } else {

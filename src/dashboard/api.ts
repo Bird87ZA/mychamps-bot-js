@@ -5,7 +5,17 @@ const router = Router();
 
 function paramId(req: Request): number {
   const raw = req.params.id;
-  return parseInt(Array.isArray(raw) ? raw[0] : raw);
+  const id = parseInt(Array.isArray(raw) ? raw[0] : raw, 10);
+
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new DashboardHttpError(
+      400,
+      'Invalid ID',
+      'The dashboard request used an invalid numeric ID.',
+    );
+  }
+
+  return id;
 }
 
 // ─── Schedules ───────────────────────────────────────────────────────────────
@@ -32,7 +42,11 @@ router.get('/schedules/:id', async (req: Request, res: Response) => {
     where: { id: paramId(req) },
   });
   if (!schedule) {
-    res.status(404).json({ error: 'Not found' });
+    res.status(404).json({
+      error: 'Schedule not found',
+      message: 'No schedule exists with that ID. Refresh the dashboard and try again.',
+      recoverable: true,
+    });
     return;
   }
   const reminders = await prisma.reminder.findMany({
@@ -53,8 +67,8 @@ router.put('/schedules/:id', async (req: Request, res: Response) => {
 
     const schedule = await prisma.schedule.update({ where: { id }, data });
     res.json(serialize(schedule));
-  } catch {
-    res.status(400).json({ error: 'Update failed' });
+  } catch (error) {
+    sendDashboardError(res, 'update the schedule', error);
   }
 });
 
@@ -64,8 +78,8 @@ router.delete('/schedules/:id', async (req: Request, res: Response) => {
     await prisma.reminder.deleteMany({ where: { scheduleId: id.toString() } });
     await prisma.schedule.delete({ where: { id } });
     res.json({ success: true });
-  } catch {
-    res.status(400).json({ error: 'Delete failed' });
+  } catch (error) {
+    sendDashboardError(res, 'delete the schedule', error);
   }
 });
 
@@ -95,8 +109,8 @@ router.delete('/reminders/:id', async (req: Request, res: Response) => {
   try {
     await prisma.reminder.delete({ where: { id: paramId(req) } });
     res.json({ success: true });
-  } catch {
-    res.status(400).json({ error: 'Delete failed' });
+  } catch (error) {
+    sendDashboardError(res, 'delete the reminder', error);
   }
 });
 
@@ -113,8 +127,8 @@ router.delete('/attendance/:id', async (req: Request, res: Response) => {
   try {
     await prisma.attendance.delete({ where: { id: paramId(req) } });
     res.json({ success: true });
-  } catch {
-    res.status(400).json({ error: 'Delete failed' });
+  } catch (error) {
+    sendDashboardError(res, 'delete the attendance configuration', error);
   }
 });
 
@@ -131,8 +145,8 @@ router.delete('/randomisers/:id', async (req: Request, res: Response) => {
   try {
     await prisma.randomiser.delete({ where: { id: paramId(req) } });
     res.json({ success: true });
-  } catch {
-    res.status(400).json({ error: 'Delete failed' });
+  } catch (error) {
+    sendDashboardError(res, 'delete the randomiser', error);
   }
 });
 
@@ -142,7 +156,7 @@ router.get('/settings', async (_req: Request, res: Response) => {
   const settings = await prisma.setting.findMany({
     orderBy: [{ guildId: 'asc' }, { key: 'asc' }],
   });
-  res.json(settings);
+  res.json(settings.map(redactSetting));
 });
 
 router.put('/settings/:id', async (req: Request, res: Response) => {
@@ -151,9 +165,9 @@ router.put('/settings/:id', async (req: Request, res: Response) => {
       where: { id: paramId(req) },
       data: { value: req.body.value },
     });
-    res.json(setting);
-  } catch {
-    res.status(400).json({ error: 'Update failed' });
+    res.json(redactSetting(setting));
+  } catch (error) {
+    sendDashboardError(res, 'update the setting', error);
   }
 });
 
@@ -169,6 +183,68 @@ router.get('/stats', async (_req: Request, res: Response) => {
   ]);
   res.json({ schedules, reminders, attendance, randomisers, settings });
 });
+
+router.use((error: unknown, _req: Request, res: Response, _next: unknown) => {
+  sendDashboardError(res, 'load dashboard data', error);
+});
+
+class DashboardHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly title: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+function sendDashboardError(res: Response, action: string, error?: unknown): void {
+  if (error instanceof DashboardHttpError) {
+    res.status(error.status).json({
+      error: error.title,
+      message: error.message,
+      recoverable: error.status < 500,
+    });
+    return;
+  }
+
+  if (isRecordNotFoundError(error)) {
+    res.status(404).json({
+      error: 'Record not found',
+      message: `The dashboard could not ${action} because the record no longer exists. Refresh the dashboard and try again.`,
+      recoverable: true,
+    });
+    return;
+  }
+
+  console.error(`[DashboardAPI] Could not ${action}:`, error);
+  res.status(500).json({
+    error: 'Dashboard server error',
+    message: `The dashboard could not ${action} because the bot database or server returned an error. Ask an admin to check the bot logs.`,
+    recoverable: false,
+  });
+}
+
+function isRecordNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const possibleError = error as { code?: unknown; message?: unknown };
+
+  return possibleError.code === 'P2025' || /not found/i.test(String(possibleError.message ?? ''));
+}
+
+function redactSetting<T extends { key: string; value: string | null }>(setting: T): T {
+  if (!/(token|password|secret)/i.test(setting.key)) {
+    return setting;
+  }
+
+  return {
+    ...setting,
+    value: setting.value ? '[redacted]' : setting.value,
+  };
+}
 
 // BigInt serialization helper — converts BigInt fields to strings for JSON
 function serialize(data: unknown): unknown {

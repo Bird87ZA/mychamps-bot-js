@@ -78,7 +78,9 @@ describe('handleRemove (attendance)', () => {
     await handleRemove(interaction as never);
 
     expect(interaction.reply).toHaveBeenCalledWith(
-      expect.objectContaining({ content: 'An error occurred.' }),
+      expect.objectContaining({
+        content: expect.stringContaining('I could not remove the attendance configuration'),
+      }),
     );
   });
 });

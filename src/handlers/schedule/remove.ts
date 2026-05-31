@@ -1,6 +1,7 @@
 import { ChatInputCommandInteraction } from 'discord.js';
 import { prisma } from '../../database';
 import { ephemeralReply } from '../../utils/reply';
+import { formatUserError } from '../../utils/errors';
 
 export async function handleRemove(interaction: ChatInputCommandInteraction): Promise<void> {
   try {
@@ -25,6 +26,6 @@ export async function handleRemove(interaction: ChatInputCommandInteraction): Pr
     await ephemeralReply(interaction, 'Event deleted successfully.');
   } catch (error) {
     console.error('Schedule remove error:', error);
-    await ephemeralReply(interaction, 'An error occurred.');
+    await ephemeralReply(interaction, formatUserError(error, 'remove the schedule'));
   }
 }

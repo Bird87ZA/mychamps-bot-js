@@ -21,6 +21,7 @@ import { getSetting, setSetting } from '../utils/settings';
 import { isValidTimezone } from '../utils/timezone';
 import { rebuildReminders } from '../utils/reminders';
 import { ephemeralReply } from '../utils/reply';
+import { formatMyChampsConfigError, formatUserError, formatValidationError } from '../utils/errors';
 import { MyChampsApiClient, StatsLeague } from '../services/myChampsApiClient';
 import { parseStatsLeagueIds, STATS_SETTING_KEY } from './stats';
 import {
@@ -87,8 +88,8 @@ export const settingsCommand: BotCommand = {
 
       await handleSettingsModal(interaction, guildId);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'An error occurred';
-      console.log('Settings update:', message);
+      const message = formatUserError(error, 'open settings');
+      console.error('Settings update error:', error);
       await ephemeralReply(interaction, message);
     }
   },
@@ -126,7 +127,7 @@ async function handleSettingsModal(
   try {
     await saveSettingsFromModal(guildId, modalSubmit);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Settings could not be saved.';
+    const message = formatValidationError(error, 'save settings');
     await modalSubmit.editReply({ content: message });
     return;
   }
@@ -167,8 +168,7 @@ async function handleIncidentSettingsModal(
   try {
     await saveIncidentSettingsFromModal(guildId, modalSubmit);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Incident settings could not be saved.';
+    const message = formatUserError(error, 'save incident settings');
     await modalSubmit.editReply({ content: message });
     return;
   }
@@ -438,13 +438,8 @@ async function handleStatsSettings(interaction: ChatInputCommandInteraction): Pr
   try {
     apiClient = await MyChampsApiClient.fromGuild(guildId);
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'MyChamps API is not configured for this server. Please set `mychamps-api-token` in settings.';
-
     await interaction.reply({
-      content: message,
+      content: formatMyChampsConfigError(error),
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -453,9 +448,10 @@ async function handleStatsSettings(interaction: ChatInputCommandInteraction): Pr
   let leagues: StatsLeague[];
   try {
     leagues = await apiClient.getManagedStatsLeagues(interaction.user.id);
-  } catch {
+  } catch (error) {
+    console.error('[SettingsCommand] Failed to fetch managed leagues:', error);
     await interaction.reply({
-      content: 'Failed to fetch managed leagues from MyChamps API.',
+      content: formatUserError(error, 'fetch managed leagues from MyChamps'),
       flags: MessageFlags.Ephemeral,
     });
     return;

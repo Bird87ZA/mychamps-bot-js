@@ -8,6 +8,7 @@ import {
 import { BotCommand } from '../types';
 import { DriverStats, LinkedStatsResponse, MyChampsApiClient } from '../services/myChampsApiClient';
 import { getSetting } from '../utils/settings';
+import { formatMyChampsConfigError, formatUserError } from '../utils/errors';
 
 const STATS_SETTING_KEY = 'stats-league-ids';
 
@@ -39,13 +40,8 @@ export const statsCommand: BotCommand = {
     try {
       apiClient = await MyChampsApiClient.fromGuild(guildId);
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'MyChamps API is not configured for this server. Please set `mychamps-api-token` in settings.';
-
       await interaction.reply({
-        content: message,
+        content: formatMyChampsConfigError(error),
         flags: MessageFlags.Ephemeral,
       });
       return;
@@ -58,7 +54,7 @@ export const statsCommand: BotCommand = {
     } catch (error) {
       console.error('[StatsCommand] Failed to fetch stats:', error);
       await interaction.editReply({
-        content: 'Failed to fetch stats from MyChamps API.',
+        content: formatUserError(error, 'fetch stats from MyChamps'),
       });
       return;
     }

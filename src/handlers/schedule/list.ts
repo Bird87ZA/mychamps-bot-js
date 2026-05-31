@@ -1,6 +1,7 @@
 import { ChatInputCommandInteraction, EmbedBuilder, MessageFlags } from 'discord.js';
 import { prisma } from '../../database';
 import { format } from 'date-fns';
+import { formatUserError } from '../../utils/errors';
 
 export async function handleList(interaction: ChatInputCommandInteraction): Promise<void> {
   try {
@@ -35,6 +36,9 @@ export async function handleList(interaction: ChatInputCommandInteraction): Prom
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   } catch (error) {
     console.error('Schedule list error:', error);
-    await interaction.reply({ content: 'An error occurred.', flags: MessageFlags.Ephemeral });
+    await interaction.reply({
+      content: formatUserError(error, 'list schedules'),
+      flags: MessageFlags.Ephemeral,
+    });
   }
 }

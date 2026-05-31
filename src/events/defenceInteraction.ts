@@ -318,8 +318,13 @@ export async function handleDefenceDoneInteraction(
 
   await channel.send({ embeds: [embed] });
 
-  const updatedDefence = [...defenceSubmitted, userId];
-  const allDone = defendants.length > 0 && updatedDefence.length >= defendants.length;
+  const updatedDefence = Array.from(new Set([...defenceSubmitted, userId]));
+  const allDone =
+    defendants.length > 0 &&
+    defendants.every((defendantId) => updatedDefence.includes(defendantId));
+  const remainingDefendants = defendants.filter(
+    (defendantId) => !updatedDefence.includes(defendantId),
+  );
   let defendantRemoved = false;
 
   if (channel && 'permissionOverwrites' in channel) {
@@ -344,22 +349,40 @@ export async function handleDefenceDoneInteraction(
     },
   });
 
-  const savedStewardRoleIds = parseStoredRoleIds(incident.stewardRoleIds);
-  const stewardRoleIds =
-    savedStewardRoleIds.length > 0 ? savedStewardRoleIds : await getTicketAccessRoleIds(guildId);
-  const mention = formatRoleMentions(stewardRoleIds, 'Stewards');
   const removalNote = defendantRemoved
     ? 'The driver has been removed from this channel.'
     : 'The bot could not remove the driver from this channel; check bot permissions.';
-  const reviewMessage = allDone
-    ? `${mention} All defendants have submitted their defence. This incident is now awaiting your review. ${removalNote}`
-    : `${mention} A defence has been submitted. ${removalNote}`;
+  let reviewMessage: string;
+
+  if (allDone) {
+    const savedStewardRoleIds = parseStoredRoleIds(incident.stewardRoleIds);
+    const stewardRoleIds =
+      savedStewardRoleIds.length > 0 ? savedStewardRoleIds : await getTicketAccessRoleIds(guildId);
+    const mention = formatRoleMentions(stewardRoleIds, 'Stewards');
+    reviewMessage = `${mention} All selected drivers have submitted their defence. This incident is now awaiting your review. ${removalNote}`;
+  } else {
+    const remainingLabel =
+      remainingDefendants.length === 1
+        ? '1 selected driver still needs'
+        : `${remainingDefendants.length} selected drivers still need`;
+    reviewMessage = `Defence recorded for <@${userId}>. ${remainingLabel} to submit before steward roles are tagged. ${removalNote}`;
+  }
 
   await channel.send(reviewMessage);
 
   await modalSubmit.editReply({
-    content: defendantRemoved
-      ? 'Your defence has been submitted. You have been removed from the incident channel.'
-      : 'Your defence has been submitted, but I could not remove you from the incident channel. A steward has been notified.',
+    content: formatDefenceSubmittedReply(defendantRemoved, allDone),
   });
+}
+
+function formatDefenceSubmittedReply(defendantRemoved: boolean, allDone: boolean): string {
+  if (defendantRemoved) {
+    return allDone
+      ? 'Your defence has been submitted. You have been removed from the incident channel, and the incident is now awaiting steward review.'
+      : 'Your defence has been submitted. You have been removed from the incident channel. The incident will be sent for steward review after all selected drivers submit.';
+  }
+
+  return allDone
+    ? 'Your defence has been submitted, but I could not remove you from the incident channel. A steward has been notified.'
+    : 'Your defence has been submitted, but I could not remove you from the incident channel. The incident will be sent for steward review after all selected drivers submit.';
 }

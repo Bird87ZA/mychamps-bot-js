@@ -4,6 +4,7 @@ import { hasTimezone } from '../../utils/settings';
 import { rebuildReminders } from '../../utils/reminders';
 import { Attendees } from '../../types';
 import { ephemeralReply } from '../../utils/reply';
+import { formatUserError } from '../../utils/errors';
 
 export async function handleCreate(interaction: ChatInputCommandInteraction): Promise<void> {
   const guildId = interaction.guildId!;
@@ -65,8 +66,8 @@ export async function handleCreate(interaction: ChatInputCommandInteraction): Pr
     await rebuildReminders(guildId);
     await ephemeralReply(interaction, message);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'An error occurred';
-    console.log('Attendance create:', message);
+    const message = formatUserError(error, 'create the attendance configuration');
+    console.error('Attendance create error:', error);
     await ephemeralReply(interaction, message);
   }
 }

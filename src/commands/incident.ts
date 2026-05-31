@@ -26,6 +26,7 @@ import { BotCommand } from '../types';
 import { prisma } from '../database';
 import { ChampionshipSummary, MyChampsApiClient } from '../services/myChampsApiClient';
 import { getTicketAccessRoleIds } from '../utils/incidentSettings';
+import { formatMyChampsConfigError, formatUserError } from '../utils/errors';
 
 interface IncidentButtonColorOption {
   label: string;
@@ -464,13 +465,8 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
   try {
     apiClient = await MyChampsApiClient.fromGuild(guildId);
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'MyChamps API is not configured for this server. Please set `mychamps-api-token` in settings.';
-
     await interaction.reply({
-      content: message,
+      content: formatMyChampsConfigError(error),
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -483,12 +479,7 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
     console.error('[IncidentCommand] Failed to fetch championships:', error);
 
     await interaction.reply({
-      content: [
-        'Failed to fetch championships from MyChamps API.',
-        'Check that `mychamps-api-token` is valid and that your Discord account is linked on MyChamps.',
-      ]
-        .filter(Boolean)
-        .join('\n'),
+      content: formatUserError(error, 'fetch championships from MyChamps'),
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -496,7 +487,8 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
 
   if (!championships || championships.length === 0) {
     await interaction.reply({
-      content: 'No championships found for your account.',
+      content:
+        'No championships were found for your linked MyChamps account. Check that your Discord account is linked on MyChamps and that you manage or race in at least one championship.',
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -532,7 +524,10 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
   const selectedSlug = getFirstStringSelectValue(modalSubmit, SETUP_FIELD_IDS.championship);
   const selectedChampionship = newestChampionships.find((c) => c.slug === selectedSlug);
   if (!selectedChampionship) {
-    await modalSubmit.editReply({ content: 'Selected championship could not be found.' });
+    await modalSubmit.editReply({
+      content:
+        'The selected championship is no longer available. Run `/incident setup` again and choose a current championship.',
+    });
     return;
   }
 
@@ -565,7 +560,10 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
       time: 300_000,
     })) as ButtonInteraction;
   } catch {
-    await modalSubmit.editReply({ content: 'Setup timed out.', components: [] });
+    await modalSubmit.editReply({
+      content: 'Incident setup timed out before role selection. Run `/incident setup` again.',
+      components: [],
+    });
     return;
   }
 
@@ -579,7 +577,10 @@ async function handleSetup(interaction: ChatInputCommandInteraction): Promise<vo
       time: 300_000,
     });
   } catch {
-    await modalSubmit.editReply({ content: 'Setup timed out.', components: [] });
+    await modalSubmit.editReply({
+      content: 'Incident setup timed out before saving roles. Run `/incident setup` again.',
+      components: [],
+    });
     return;
   }
 
@@ -703,7 +704,11 @@ async function handleClose(
     });
     verdictSelectInteraction = collected as StringSelectMenuInteraction;
   } catch {
-    await interaction.editReply({ content: 'Close command timed out.', components: [] });
+    await interaction.editReply({
+      content:
+        'Incident close timed out before a verdict was selected. Run `/incident close` again.',
+      components: [],
+    });
     return;
   }
 
@@ -745,7 +750,11 @@ async function handleClose(
       time: 120_000,
     });
   } catch {
-    await interaction.editReply({ content: 'Close command timed out.', components: [] });
+    await interaction.editReply({
+      content:
+        'Incident close timed out before the verdict was submitted. Run `/incident close` again.',
+      components: [],
+    });
     return;
   }
 
@@ -754,6 +763,7 @@ async function handleClose(
     verdictType === 'Penalty' ? modalSubmit.fields.getTextInputValue('penalty_value') : undefined;
 
   // Submit verdict to API if we have a remote incident ID
+  let apiSyncWarning: string | null = null;
   if (incident.mychampsIncidentId) {
     try {
       const apiClient = await MyChampsApiClient.fromGuild(guildId);
@@ -764,6 +774,7 @@ async function handleClose(
       });
     } catch (err) {
       console.error('[IncidentClose] Failed to submit verdict to API:', err);
+      apiSyncWarning = formatUserError(err, 'sync the verdict to MyChamps');
     }
   }
 
@@ -779,7 +790,10 @@ async function handleClose(
     .setColor(0x2ecc71)
     .setTimestamp();
 
-  await modalSubmit.reply({ embeds: [embed] });
+  await modalSubmit.reply({
+    content: apiSyncWarning ? `Warning: ${apiSyncWarning}` : undefined,
+    embeds: [embed],
+  });
 
   // Lock the channel — remove SEND_MESSAGES from @everyone, keep VIEW_CHANNEL for stewards
   const channel = interaction.channel;

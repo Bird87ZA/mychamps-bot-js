@@ -4,6 +4,7 @@ import { hasTimezone, getSetting } from '../../utils/settings';
 import { parseDate, convertToUtc } from '../../utils/timezone';
 import { rebuildReminders } from '../../utils/reminders';
 import { ephemeralReply } from '../../utils/reply';
+import { formatUserError } from '../../utils/errors';
 
 const INVALID_IMAGE_MESSAGE = 'The image must be a valid Discord image URL.';
 
@@ -93,8 +94,8 @@ export async function handleAdd(interaction: ChatInputCommandInteraction): Promi
     await rebuildReminders(guildId);
     await ephemeralReply(interaction, message);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'An error occurred';
-    console.log('Schedule add:', message);
+    const message = formatUserError(error, 'add the schedule');
+    console.error('Schedule add error:', error);
     await ephemeralReply(interaction, message);
   }
 }
