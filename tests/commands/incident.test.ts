@@ -76,7 +76,7 @@ describe('incidentCommand', () => {
 
       expect(interaction.reply).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: expect.stringContaining('not configured'),
+          content: expect.stringContaining('API token is missing'),
         }),
       );
     });
@@ -97,7 +97,7 @@ describe('incidentCommand', () => {
 
       expect(interaction.reply).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: expect.stringContaining('No championships found'),
+          content: expect.stringContaining('No championships were found'),
         }),
       );
     });
@@ -120,10 +120,7 @@ describe('incidentCommand', () => {
 
       expect(interaction.reply).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: [
-            'Failed to fetch championships from MyChamps API.',
-            'Check that `mychamps-api-token` is valid and that your Discord account is linked on MyChamps.',
-          ].join('\n'),
+          content: expect.stringContaining('I could not fetch championships from MyChamps'),
         }),
       );
     });

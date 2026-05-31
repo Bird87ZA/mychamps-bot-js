@@ -75,7 +75,7 @@ describe('handleList (schedule)', () => {
     await handleList(interaction as never);
 
     expect(interaction.reply).toHaveBeenCalledWith(
-      expect.objectContaining({ content: 'An error occurred.' }),
+      expect.objectContaining({ content: expect.stringContaining('I could not list schedules') }),
     );
   });
 });

@@ -22,7 +22,7 @@ export async function hasTimezone(guildId: string): Promise<boolean> {
     where: { guildId, key: 'timezone' },
   });
   if (!exists) {
-    throw new Error('Please set a timezone first using `/settings timezone`.');
+    throw new Error('Timezone is not set for this server.');
   }
   return true;
 }

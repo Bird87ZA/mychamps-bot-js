@@ -34,4 +34,20 @@ describe('startDashboard', () => {
 
     expect(mockUse).toHaveBeenCalledWith('/api', 'mock-router');
   });
+
+  it('mounts dashboard under a configured base path', async () => {
+    const { startDashboard } = await import('../../src/dashboard/server');
+    startDashboard(4000, '/bot');
+
+    expect(mockUse).toHaveBeenCalledWith(expect.any(Function));
+    expect(mockUse).toHaveBeenCalledWith('/bot/api', 'mock-router');
+    expect(mockGet).toHaveBeenCalledWith('/bot/', expect.any(Function));
+  });
+
+  it('adds auth middleware when dashboard credentials are configured', async () => {
+    const { startDashboard } = await import('../../src/dashboard/server');
+    startDashboard(4000, '/bot', { username: 'admin', password: 'secret' });
+
+    expect(mockUse).toHaveBeenCalledWith('/bot', expect.any(Function));
+  });
 });

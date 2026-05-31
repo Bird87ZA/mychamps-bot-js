@@ -122,12 +122,13 @@ describe('Dashboard API', () => {
       });
     });
 
-    it('returns 400 on error', async () => {
+    it('returns 404 when update target is missing', async () => {
       mockPrisma.schedule.update.mockRejectedValue(new Error('Not found'));
 
       const res = await request(app).put('/api/schedules/999').send({ name: 'test' });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(404);
+      expect(res.body.message).toContain('record no longer exists');
     });
   });
 
@@ -142,12 +143,13 @@ describe('Dashboard API', () => {
       expect(res.body.success).toBe(true);
     });
 
-    it('returns 400 on error', async () => {
+    it('returns 500 on server error', async () => {
       mockPrisma.reminder.deleteMany.mockRejectedValue(new Error('fail'));
 
       const res = await request(app).delete('/api/schedules/999');
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe('Dashboard server error');
     });
   });
 
@@ -251,12 +253,21 @@ describe('Dashboard API', () => {
           createdAt: new Date(),
           updatedAt: new Date(),
         },
+        {
+          id: 2,
+          guildId: '123',
+          key: 'mychamps-api-token',
+          value: 'secret-token',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
       ]);
 
       const res = await request(app).get('/api/settings');
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
+      expect(res.body).toHaveLength(2);
+      expect(res.body[1].value).toBe('[redacted]');
     });
   });
 

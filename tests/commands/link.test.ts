@@ -76,7 +76,9 @@ describe('linkCommand', () => {
       await linkCommand.execute(interaction as never, client as never);
 
       expect(interaction.reply).toHaveBeenCalledWith(
-        expect.objectContaining({ content: 'Email not found' }),
+        expect.objectContaining({
+          content: expect.stringContaining('Email not found on MyChamps'),
+        }),
       );
     });
 
@@ -94,7 +96,7 @@ describe('linkCommand', () => {
 
       expect(interaction.reply).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: 'mychamps-api-token is not configured for this guild.',
+          content: expect.stringContaining('API token is missing'),
         }),
       );
     });
@@ -139,7 +141,7 @@ describe('linkCommand', () => {
       await linkCommand.execute(interaction as never, client as never);
 
       expect(interaction.reply).toHaveBeenCalledWith(
-        expect.objectContaining({ content: 'Invalid or expired code' }),
+        expect.objectContaining({ content: expect.stringContaining('invalid or expired') }),
       );
     });
 
@@ -157,7 +159,7 @@ describe('linkCommand', () => {
 
       expect(interaction.reply).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: 'mychamps-api-token is not configured for this guild.',
+          content: expect.stringContaining('API token is missing'),
         }),
       );
     });
@@ -236,7 +238,7 @@ describe('linkCommand', () => {
       await linkCommand.execute(interaction as never, client as never);
 
       expect(interaction.reply).toHaveBeenCalledWith(
-        expect.objectContaining({ content: 'Network timeout' }),
+        expect.objectContaining({ content: expect.stringContaining('Could not reach') }),
       );
     });
 
@@ -253,7 +255,7 @@ describe('linkCommand', () => {
 
       expect(interaction.reply).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: 'mychamps-api-token is not configured for this guild.',
+          content: expect.stringContaining('API token is missing'),
         }),
       );
     });

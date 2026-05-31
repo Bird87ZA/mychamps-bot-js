@@ -1,6 +1,7 @@
 import { ChatInputCommandInteraction } from 'discord.js';
 import { prisma } from '../../database';
 import { ephemeralReply } from '../../utils/reply';
+import { formatUserError } from '../../utils/errors';
 
 export async function handleRemove(interaction: ChatInputCommandInteraction): Promise<void> {
   try {
@@ -30,6 +31,9 @@ export async function handleRemove(interaction: ChatInputCommandInteraction): Pr
     await ephemeralReply(interaction, 'Attendance configuration removed.');
   } catch (error) {
     console.error('Attendance remove error:', error);
-    await ephemeralReply(interaction, 'An error occurred.');
+    await ephemeralReply(
+      interaction,
+      formatUserError(error, 'remove the attendance configuration'),
+    );
   }
 }

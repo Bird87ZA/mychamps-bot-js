@@ -4,6 +4,7 @@ import { prisma } from '../database';
 import { hasTimezone, getSetting } from '../utils/settings';
 import { parseDate, convertToUtc } from '../utils/timezone';
 import { ephemeralReply } from '../utils/reply';
+import { formatUserError } from '../utils/errors';
 
 export const randomiserCommand: BotCommand = {
   data: new SlashCommandBuilder()
@@ -74,8 +75,8 @@ export const randomiserCommand: BotCommand = {
 
       await ephemeralReply(interaction, 'Randomiser created successfully.');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'An error occurred';
-      console.log('Randomiser create:', message);
+      const message = formatUserError(error, 'create the randomiser');
+      console.error('Randomiser create error:', error);
       await ephemeralReply(interaction, message);
     }
   },

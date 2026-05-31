@@ -7,6 +7,7 @@ import {
   mergeAttendeesWithConfig,
 } from '../utils/attendance';
 import { helpSections } from '../commands/help';
+import { formatUserError } from '../utils/errors';
 
 export async function handleAttendanceInteraction(
   interaction: ButtonInteraction,
@@ -141,7 +142,10 @@ export async function handleAttendanceInteraction(
   } catch (error) {
     console.error('Attendance interaction error:', error);
     if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: 'An error occurred.', flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        content: formatUserError(error, 'update your attendance response'),
+        flags: MessageFlags.Ephemeral,
+      });
     }
   }
 }

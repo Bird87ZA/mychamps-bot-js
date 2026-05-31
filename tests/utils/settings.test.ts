@@ -90,9 +90,7 @@ describe('settings utils', () => {
     it('throws when timezone is not set', async () => {
       mockPrisma.setting.findFirst.mockResolvedValue(null);
 
-      await expect(hasTimezone('123')).rejects.toThrow(
-        'Please set a timezone first using `/settings timezone`.',
-      );
+      await expect(hasTimezone('123')).rejects.toThrow('Timezone is not set for this server.');
     });
   });
 

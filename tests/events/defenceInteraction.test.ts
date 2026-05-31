@@ -342,6 +342,12 @@ describe('handleDefenceDoneInteraction', () => {
         }),
       }),
     );
+    expect(mockChannel.send).not.toHaveBeenCalledWith(
+      expect.stringContaining('<@&steward-role-a>'),
+    );
+    expect(mockChannel.send).toHaveBeenCalledWith(
+      expect.stringContaining('before steward roles are tagged'),
+    );
   });
 
   it('falls back to ticket access role mentions when no steward roles are saved', async () => {

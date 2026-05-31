@@ -2,6 +2,7 @@ import { ChatInputCommandInteraction, Client, SlashCommandBuilder } from 'discor
 import { BotCommand } from '../types';
 import { MyChampsApiClient } from '../services/myChampsApiClient';
 import { ephemeralReply } from '../utils/reply';
+import { formatUserError, getErrorMessage } from '../utils/errors';
 
 export const linkCommand: BotCommand = {
   data: new SlashCommandBuilder()
@@ -48,8 +49,10 @@ export const linkCommand: BotCommand = {
             `Verification code sent to ${email}. Use \`/link verify <code>\` to complete.`,
           );
         } catch (error) {
-          const message = error instanceof Error ? error.message : 'An error occurred';
-          await ephemeralReply(interaction, message);
+          await ephemeralReply(
+            interaction,
+            formatLinkError(error, 'start MyChamps account linking'),
+          );
         }
         break;
       }
@@ -61,8 +64,10 @@ export const linkCommand: BotCommand = {
           await apiClient.confirmLink(interaction.user.id, code);
           await ephemeralReply(interaction, 'Your Discord account has been linked to MyChamps!');
         } catch (error) {
-          const message = error instanceof Error ? error.message : 'An error occurred';
-          await ephemeralReply(interaction, message);
+          await ephemeralReply(
+            interaction,
+            formatLinkError(error, 'verify your MyChamps account link'),
+          );
         }
         break;
       }
@@ -90,14 +95,14 @@ export const linkCommand: BotCommand = {
             await ephemeralReply(interaction, `Your championships:\n${list}`);
           }
         } catch (error) {
-          const message = error instanceof Error ? error.message : 'An error occurred';
+          const message = getErrorMessage(error);
           if (message.includes('404')) {
             await ephemeralReply(
               interaction,
               'Your account is not linked. Use `/link email` to start.',
             );
           } else {
-            await ephemeralReply(interaction, message);
+            await ephemeralReply(interaction, formatUserError(error, 'check your MyChamps link'));
           }
         }
         break;
@@ -105,3 +110,17 @@ export const linkCommand: BotCommand = {
     }
   },
 };
+
+function formatLinkError(error: unknown, action: string): string {
+  const message = getErrorMessage(error);
+
+  if (/email not found/i.test(message)) {
+    return 'Email not found on MyChamps. Check the address or create a MyChamps account, then run `/link email` again.';
+  }
+
+  if (/invalid or expired code/i.test(message)) {
+    return 'The verification code is invalid or expired. Check the code from your email, or run `/link email` again to request a new one.';
+  }
+
+  return formatUserError(error, action);
+}
