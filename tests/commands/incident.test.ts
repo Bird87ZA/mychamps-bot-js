@@ -35,11 +35,12 @@ describe('incidentCommand', () => {
     expect(incidentCommand.data.name).toBe('incident');
   });
 
-  it('has setup and close subcommands', () => {
+  it('has setup, close, and merge subcommands', () => {
     const json = incidentCommand.data.toJSON();
     const subcommands = json.options?.map((o: { name: string }) => o.name) ?? [];
     expect(subcommands).toContain('setup');
     expect(subcommands).toContain('close');
+    expect(subcommands).toContain('merge');
   });
 
   describe('setup subcommand', () => {
@@ -583,6 +584,298 @@ describe('incidentCommand', () => {
       expect(mockChannel.permissionOverwrites.edit).toHaveBeenCalledWith(
         'ticket-role-b',
         expect.objectContaining({ ViewChannel: true, SendMessages: false }),
+      );
+    });
+  });
+
+  describe('merge subcommand', () => {
+    function mockIncident(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 1,
+        incidentNumber: 1,
+        guildId: '123456789',
+        channelId: 'existing-channel-id',
+        mychampsIncidentId: null,
+        championshipSlug: 'champ-a',
+        defendants: [],
+        stewardRoleIds: ['steward-role-a'],
+        status: 'open',
+        defenceSubmitted: [],
+        lastReminderAt: null,
+        createdAt: new Date('2026-01-01T12:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T12:00:00.000Z'),
+        ...overrides,
+      };
+    }
+
+    function mockDiscordMessage(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'message-1',
+        content: 'Source incident message',
+        createdTimestamp: Date.parse('2026-01-01T12:00:00.000Z'),
+        author: { tag: 'Reporter#0001', username: 'Reporter', id: 'reporter-id' },
+        attachments: new Map(),
+        embeds: [],
+        ...overrides,
+      };
+    }
+
+    it('rejects when not run in an incident channel', async () => {
+      const interaction = createMockInteraction();
+      interaction.options.getSubcommand.mockReturnValue('merge');
+      const client = createMockClient();
+
+      mockPrisma.incident.findFirst.mockResolvedValue(null);
+
+      await incidentCommand.execute(interaction as never, client as never);
+
+      expect(interaction.reply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('incident channel you want to keep'),
+        }),
+      );
+    });
+
+    it('reports when there are no other open incidents to merge', async () => {
+      const interaction = createMockInteraction();
+      interaction.options.getSubcommand.mockReturnValue('merge');
+      const client = createMockClient();
+
+      mockPrisma.incident.findFirst.mockResolvedValue(mockIncident() as never);
+      mockPrisma.incident.findMany.mockResolvedValue([]);
+
+      await incidentCommand.execute(interaction as never, client as never);
+
+      expect(interaction.reply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('no other open bot-created incidents'),
+        }),
+      );
+    });
+
+    it('merges a selected incident into the current incident and only expects duplicate defendants once', async () => {
+      const existingIncident = mockIncident({
+        id: 1,
+        incidentNumber: 1,
+        channelId: 'existing-channel-id',
+        defendants: ['driver-a'],
+        defenceSubmitted: [],
+        stewardRoleIds: ['steward-role-a'],
+      });
+      const sourceIncident = mockIncident({
+        id: 20,
+        incidentNumber: 2,
+        channelId: 'source-channel-id',
+        defendants: ['driver-a', 'driver-b'],
+        defenceSubmitted: ['driver-a'],
+        stewardRoleIds: ['steward-role-b'],
+      });
+      const selectInteraction = {
+        customId: 'incident_merge_select!1',
+        user: { id: 'user1' },
+        values: ['20'],
+        update: vi.fn(),
+      };
+      const mergeButtonInteraction = {
+        customId: 'incident_merge_confirm!1!20',
+        user: { id: 'user1' },
+        update: vi.fn(),
+      };
+      const targetSend = vi.fn();
+      const targetChannel = {
+        type: 0,
+        id: 'existing-channel-id',
+        send: targetSend,
+        messages: { fetch: vi.fn() },
+        awaitMessageComponent: vi
+          .fn()
+          .mockResolvedValueOnce(selectInteraction)
+          .mockResolvedValueOnce(mergeButtonInteraction),
+        permissionOverwrites: { edit: vi.fn() },
+      };
+      const sourceChannel = {
+        type: 0,
+        id: 'source-channel-id',
+        send: vi.fn(),
+        permissionOverwrites: { edit: vi.fn() },
+        messages: {
+          fetch: vi.fn().mockResolvedValue(
+            new Map([
+              [
+                'source-message-1',
+                mockDiscordMessage({
+                  id: 'source-message-1',
+                  content: 'Evidence and report from the source channel',
+                }),
+              ],
+            ]),
+          ),
+        },
+        delete: vi.fn(),
+      };
+      const interaction = createMockInteraction({
+        channelId: 'existing-channel-id',
+        channel: targetChannel,
+        editReply: vi.fn(),
+      });
+      interaction.options.getSubcommand.mockReturnValue('merge');
+      const client = createMockClient();
+      client.channels.fetch.mockImplementation(async (channelId: string) => {
+        if (channelId === 'source-channel-id') return sourceChannel;
+        return targetChannel;
+      });
+
+      mockPrisma.incident.findFirst.mockImplementation(
+        async (args: { where?: { id?: number } }) => {
+          if (args.where?.id === 20) return sourceIncident as never;
+          return existingIncident as never;
+        },
+      );
+      mockPrisma.incident.findMany.mockResolvedValue([sourceIncident] as never);
+      mockPrisma.incident.update.mockResolvedValue({} as never);
+      mockPrisma.incident.delete.mockResolvedValue({} as never);
+
+      await incidentCommand.execute(interaction as never, client as never);
+
+      expect(interaction.reply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('Select the incident to merge'),
+          components: expect.any(Array),
+        }),
+      );
+      expect(selectInteraction.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('Ready to merge incident-0002'),
+          components: expect.any(Array),
+        }),
+      );
+      expect(mergeButtonInteraction.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('Merging incident-0002'),
+          components: [],
+        }),
+      );
+      expect(targetChannel.permissionOverwrites.edit).toHaveBeenCalledTimes(1);
+      expect(targetChannel.permissionOverwrites.edit).toHaveBeenCalledWith(
+        'driver-b',
+        expect.objectContaining({ ViewChannel: true, SendMessages: false }),
+      );
+      expect(mockPrisma.incident.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 1 },
+          data: expect.objectContaining({
+            defendants: ['driver-a', 'driver-b'],
+            defenceSubmitted: ['driver-a'],
+            stewardRoleIds: ['steward-role-a', 'steward-role-b'],
+            status: 'open',
+          }),
+        }),
+      );
+      expect(targetSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          embeds: expect.any(Array),
+        }),
+      );
+      expect(targetSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('Evidence and report from the source channel'),
+          allowedMentions: { parse: [] },
+        }),
+      );
+      expect(targetSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('<@driver-b>'),
+          components: expect.any(Array),
+        }),
+      );
+      expect(sourceChannel.delete).toHaveBeenCalled();
+      expect(mockPrisma.incident.delete).toHaveBeenCalledWith({ where: { id: 20 } });
+      expect(interaction.editReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('incident-0002 was merged into incident-0001'),
+          components: [],
+        }),
+      );
+    });
+
+    it('marks merged incident awaiting review and tags stewards when all defendants have submitted', async () => {
+      const existingIncident = mockIncident({
+        id: 1,
+        incidentNumber: 1,
+        channelId: 'existing-channel-id',
+        defendants: ['driver-a'],
+        defenceSubmitted: ['driver-a'],
+        stewardRoleIds: ['steward-role-a'],
+      });
+      const sourceIncident = mockIncident({
+        id: 2,
+        incidentNumber: 2,
+        channelId: 'source-channel-id',
+        defendants: ['driver-b'],
+        defenceSubmitted: ['driver-b'],
+        stewardRoleIds: [],
+      });
+      const targetChannel = {
+        type: 0,
+        id: 'existing-channel-id',
+        send: vi.fn(),
+        messages: { fetch: vi.fn() },
+        awaitMessageComponent: vi
+          .fn()
+          .mockResolvedValueOnce({
+            customId: 'incident_merge_select!1',
+            user: { id: 'user1' },
+            values: ['2'],
+            update: vi.fn(),
+          })
+          .mockResolvedValueOnce({
+            customId: 'incident_merge_confirm!1!2',
+            user: { id: 'user1' },
+            update: vi.fn(),
+          }),
+        permissionOverwrites: { edit: vi.fn() },
+      };
+      const sourceChannel = {
+        type: 0,
+        id: 'source-channel-id',
+        send: vi.fn(),
+        permissionOverwrites: { edit: vi.fn() },
+        messages: { fetch: vi.fn().mockResolvedValue(new Map()) },
+        delete: vi.fn(),
+      };
+      const interaction = createMockInteraction({
+        channelId: 'existing-channel-id',
+        channel: targetChannel,
+        editReply: vi.fn(),
+      });
+      interaction.options.getSubcommand.mockReturnValue('merge');
+      const client = createMockClient();
+      client.channels.fetch.mockResolvedValue(sourceChannel);
+
+      mockPrisma.incident.findFirst.mockImplementation(
+        async (args: { where?: { id?: number } }) => {
+          if (args.where?.id === 2) return sourceIncident as never;
+          return existingIncident as never;
+        },
+      );
+      mockPrisma.incident.findMany.mockResolvedValue([sourceIncident] as never);
+      mockPrisma.incident.update.mockResolvedValue({} as never);
+      mockPrisma.incident.delete.mockResolvedValue({} as never);
+
+      await incidentCommand.execute(interaction as never, client as never);
+
+      expect(targetChannel.permissionOverwrites.edit).not.toHaveBeenCalled();
+      expect(mockPrisma.incident.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            defendants: ['driver-a', 'driver-b'],
+            defenceSubmitted: ['driver-a', 'driver-b'],
+            status: 'awaiting_review',
+          }),
+        }),
+      );
+      expect(targetChannel.send).toHaveBeenCalledWith(
+        expect.stringContaining('<@&steward-role-a>'),
       );
     });
   });

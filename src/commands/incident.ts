@@ -11,6 +11,7 @@ import {
   ComponentType,
   EmbedBuilder,
   LabelBuilder,
+  Message,
   MessageFlags,
   ModalBuilder,
   ModalSubmitInteraction,
@@ -19,6 +20,7 @@ import {
   SlashCommandBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuInteraction,
+  TextChannel,
   TextInputBuilder,
   TextInputStyle,
 } from 'discord.js';
@@ -40,11 +42,22 @@ interface IncidentButtonColorOption {
 const SETUP_MODAL_CUSTOM_ID = 'incident_setup_modal';
 const SETUP_ROLES_MODAL_CUSTOM_ID = 'incident_setup_roles_modal';
 const SETUP_CONTINUE_CUSTOM_ID = 'incident_setup_continue';
+const MERGE_SELECT_CUSTOM_ID_PREFIX = 'incident_merge_select';
+const MERGE_CONFIRM_CUSTOM_ID_PREFIX = 'incident_merge_confirm';
 const DEFAULT_BUTTON_LABEL = 'Report Incident';
 const DEFAULT_BUTTON_COLOR = 'Red';
 const DEFAULT_BUTTON_MESSAGE =
   'Click the button below to report an incident. You will be asked to provide details.';
+const DISCORD_MESSAGE_LIMIT = 2000;
 const INCIDENT_CHANNEL_LOCK_PERMISSIONS = {
+  SendMessages: false,
+  SendMessagesInThreads: false,
+  CreatePublicThreads: false,
+  CreatePrivateThreads: false,
+  AddReactions: false,
+} as const;
+const MERGED_DEFENDANT_PERMISSIONS = {
+  ViewChannel: true,
   SendMessages: false,
   SendMessagesInThreads: false,
   CreatePublicThreads: false,
@@ -433,6 +446,11 @@ export const incidentCommand: BotCommand = {
     )
     .addSubcommand((sub) =>
       sub.setName('close').setDescription('Close the current incident channel with a verdict'),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('merge')
+        .setDescription('Merge another open incident into the current incident channel'),
     ),
 
   async execute(interaction: ChatInputCommandInteraction, client: Client): Promise<void> {
@@ -442,6 +460,8 @@ export const incidentCommand: BotCommand = {
       await handleSetup(interaction);
     } else if (subcommand === 'close') {
       await handleClose(interaction, client);
+    } else if (subcommand === 'merge') {
+      await handleMerge(interaction, client);
     }
   },
 };
@@ -824,4 +844,468 @@ async function handleClose(
     where: { id: incident.id },
     data: { status: 'closed' },
   });
+}
+
+async function handleMerge(
+  interaction: ChatInputCommandInteraction,
+  client: Client,
+): Promise<void> {
+  const guildId = interaction.guildId!;
+  const channelId = interaction.channelId;
+
+  const existingIncident = await prisma.incident.findFirst({
+    where: { guildId, channelId, status: { not: 'closed' } },
+  });
+
+  if (!existingIncident) {
+    await interaction.reply({
+      content: 'This command can only be used in the incident channel you want to keep.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const mergeCandidates = await prisma.incident.findMany({
+    where: {
+      guildId,
+      status: { not: 'closed' },
+      channelId: { not: null },
+      id: { not: existingIncident.id },
+    },
+    orderBy: [{ incidentNumber: 'asc' }, { createdAt: 'asc' }],
+  });
+
+  if (mergeCandidates.length === 0) {
+    await interaction.reply({
+      content: 'There are no other open bot-created incidents to merge into this one.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const visibleCandidates = mergeCandidates.slice(0, 25);
+  const selectCustomId = `${MERGE_SELECT_CUSTOM_ID_PREFIX}!${existingIncident.id}`;
+
+  await interaction.reply({
+    content: [
+      'Select the incident to merge into this channel, then click Merge.',
+      mergeCandidates.length > visibleCandidates.length
+        ? `Showing the first 25 of ${mergeCandidates.length} open incidents.`
+        : null,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    components: buildMergeComponents(existingIncident.id, visibleCandidates),
+    flags: MessageFlags.Ephemeral,
+  });
+
+  const channelForCollect = interaction.channel;
+  if (!channelForCollect) return;
+
+  let selectedIncidentId: number;
+  let selectedIncidentReference: string;
+  try {
+    const collected = await channelForCollect.awaitMessageComponent({
+      componentType: ComponentType.StringSelect,
+      filter: (i) => i.customId === selectCustomId && i.user.id === interaction.user.id,
+      time: 120_000,
+    });
+    const selectInteraction = collected as StringSelectMenuInteraction;
+    const selectedIncident = visibleCandidates.find(
+      (incident) => incident.id.toString() === selectInteraction.values[0],
+    );
+
+    if (!selectedIncident) {
+      await selectInteraction.update({
+        content: 'That incident is no longer available to merge. Run `/incident merge` again.',
+        components: [],
+      });
+      return;
+    }
+
+    selectedIncidentId = selectedIncident.id;
+    selectedIncidentReference = formatIncidentReference(selectedIncident);
+
+    await selectInteraction.update({
+      content: `Ready to merge ${selectedIncidentReference} into this incident.`,
+      components: buildMergeComponents(existingIncident.id, visibleCandidates, selectedIncidentId),
+    });
+  } catch {
+    await interaction.editReply({
+      content:
+        'Incident merge timed out before an incident was selected. Run `/incident merge` again.',
+      components: [],
+    });
+    return;
+  }
+
+  const confirmCustomId = `${MERGE_CONFIRM_CUSTOM_ID_PREFIX}!${existingIncident.id}!${selectedIncidentId}`;
+  try {
+    const collected = await channelForCollect.awaitMessageComponent({
+      componentType: ComponentType.Button,
+      filter: (i) => i.customId === confirmCustomId && i.user.id === interaction.user.id,
+      time: 120_000,
+    });
+    const buttonInteraction = collected as ButtonInteraction;
+    await buttonInteraction.update({
+      content: `Merging ${selectedIncidentReference} into this incident...`,
+      components: [],
+    });
+  } catch {
+    await interaction.editReply({
+      content: 'Incident merge timed out before Merge was clicked. Run `/incident merge` again.',
+      components: [],
+    });
+    return;
+  }
+
+  try {
+    const result = await mergeIncidentIntoExisting({
+      guildId,
+      existingIncidentId: existingIncident.id,
+      sourceIncidentId: selectedIncidentId,
+      existingChannel: interaction.channel,
+      client,
+    });
+
+    await interaction.editReply({
+      content: [
+        `${formatIncidentReference(result.sourceIncident)} was merged into ${formatIncidentReference(result.existingIncident)}.`,
+        result.sourceChannelDeleted
+          ? 'The merged incident channel and record were removed.'
+          : 'The merged incident record was removed, but I could not delete its channel. Check `Manage Channels` for the bot and delete that channel manually.',
+      ].join('\n'),
+      components: [],
+    });
+  } catch (error) {
+    console.error('[IncidentMerge] Failed to merge incidents:', error);
+    await interaction.editReply({
+      content: formatUserError(error, 'merge the incidents'),
+      components: [],
+    });
+  }
+}
+
+function buildMergeComponents(
+  existingIncidentId: number,
+  incidents: Array<{
+    id: number;
+    incidentNumber: number | null;
+    channelId: string | null;
+    status: string;
+    championshipSlug: string;
+    createdAt: Date;
+  }>,
+  selectedIncidentId?: number,
+): ActionRowBuilder<StringSelectMenuBuilder | ButtonBuilder>[] {
+  const selectMenu = new StringSelectMenuBuilder()
+    .setCustomId(`${MERGE_SELECT_CUSTOM_ID_PREFIX}!${existingIncidentId}`)
+    .setPlaceholder('Select incident to merge into this one')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(
+      incidents.map((incident) => ({
+        label: truncateSelectText(formatIncidentReference(incident)),
+        value: incident.id.toString(),
+        description: truncateSelectText(formatIncidentOptionDescription(incident)),
+        default: incident.id === selectedIncidentId,
+      })),
+    );
+
+  const mergeButton = new ButtonBuilder()
+    .setCustomId(
+      selectedIncidentId
+        ? `${MERGE_CONFIRM_CUSTOM_ID_PREFIX}!${existingIncidentId}!${selectedIncidentId}`
+        : `${MERGE_CONFIRM_CUSTOM_ID_PREFIX}!${existingIncidentId}`,
+    )
+    .setLabel('Merge')
+    .setStyle(ButtonStyle.Danger)
+    .setDisabled(!selectedIncidentId);
+
+  return [
+    new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu),
+    new ActionRowBuilder<ButtonBuilder>().addComponents(mergeButton),
+  ];
+}
+
+interface MergeIncidentInput {
+  guildId: string;
+  existingIncidentId: number;
+  sourceIncidentId: number;
+  existingChannel: unknown;
+  client: Client;
+}
+
+async function mergeIncidentIntoExisting({
+  guildId,
+  existingIncidentId,
+  sourceIncidentId,
+  existingChannel,
+  client,
+}: MergeIncidentInput) {
+  if (existingIncidentId === sourceIncidentId) {
+    throw new Error('Select a different incident to merge.');
+  }
+
+  const existingIncident = await prisma.incident.findFirst({
+    where: { id: existingIncidentId, guildId, status: { not: 'closed' } },
+  });
+  const sourceIncident = await prisma.incident.findFirst({
+    where: { id: sourceIncidentId, guildId, status: { not: 'closed' } },
+  });
+
+  if (!existingIncident || !sourceIncident) {
+    throw new Error('One of the selected incidents is no longer open. Refresh and try again.');
+  }
+
+  if (!sourceIncident.channelId) {
+    throw new Error('The incident being merged does not have a Discord channel.');
+  }
+
+  const targetChannel = isIncidentTextChannel(existingChannel)
+    ? existingChannel
+    : await fetchIncidentTextChannel(client, existingIncident.channelId);
+  const sourceChannel = await fetchIncidentTextChannel(client, sourceIncident.channelId);
+
+  const existingDefendants = parseStoredIds(existingIncident.defendants);
+  const sourceDefendants = parseStoredIds(sourceIncident.defendants);
+  const mergedDefendants = uniqueIds([...existingDefendants, ...sourceDefendants]);
+  const mergedDefenceSubmitted = uniqueIds([
+    ...parseStoredIds(existingIncident.defenceSubmitted),
+    ...parseStoredIds(sourceIncident.defenceSubmitted),
+  ]).filter((userId) => mergedDefendants.includes(userId));
+  const mergedStewardRoleIds = uniqueIds([
+    ...parseStoredIds(existingIncident.stewardRoleIds),
+    ...parseStoredIds(sourceIncident.stewardRoleIds),
+  ]);
+  const defendantsAwaitingDefence = mergedDefendants.filter(
+    (userId) => !mergedDefenceSubmitted.includes(userId),
+  );
+  const sourceDefendantsAwaitingDefence = sourceDefendants.filter(
+    (userId) => !mergedDefenceSubmitted.includes(userId),
+  );
+
+  for (const userId of sourceDefendantsAwaitingDefence) {
+    await targetChannel.permissionOverwrites.edit(userId, MERGED_DEFENDANT_PERMISSIONS);
+  }
+
+  await copyIncidentChannelContents(sourceChannel, targetChannel, sourceIncident);
+
+  const mergedStatus =
+    mergedDefendants.length > 0 &&
+    mergedDefendants.every((userId) => mergedDefenceSubmitted.includes(userId))
+      ? 'awaiting_review'
+      : 'open';
+
+  await prisma.incident.update({
+    where: { id: existingIncident.id },
+    data: {
+      defendants: mergedDefendants,
+      defenceSubmitted: mergedDefenceSubmitted,
+      stewardRoleIds: mergedStewardRoleIds,
+      status: mergedStatus,
+      lastReminderAt: null,
+    },
+  });
+
+  await sendMergeFollowUp({
+    channel: targetChannel,
+    incidentId: existingIncident.id,
+    sourceIncident,
+    defendantsAwaitingDefence,
+    stewardRoleIds: mergedStewardRoleIds,
+  });
+
+  let sourceChannelDeleted = true;
+  try {
+    await sourceChannel.delete(
+      `Merged into ${formatIncidentReference(existingIncident)} by MyChamps bot`,
+    );
+  } catch (error) {
+    sourceChannelDeleted = false;
+    console.error('[IncidentMerge] Failed to delete merged incident channel:', error);
+  }
+
+  await prisma.incident.delete({ where: { id: sourceIncident.id } });
+
+  return { existingIncident, sourceIncident, sourceChannelDeleted };
+}
+
+async function fetchIncidentTextChannel(
+  client: Client,
+  channelId: string | null,
+): Promise<TextChannel> {
+  if (!channelId) {
+    throw new Error('The incident does not have a Discord channel.');
+  }
+
+  const channel = await client.channels.fetch(channelId);
+
+  if (!isIncidentTextChannel(channel)) {
+    throw new Error(`The Discord channel for incident <#${channelId}> is unavailable.`);
+  }
+
+  return channel;
+}
+
+function isIncidentTextChannel(channel: unknown): channel is TextChannel {
+  return Boolean(
+    channel &&
+    typeof channel === 'object' &&
+    'send' in channel &&
+    'messages' in channel &&
+    'permissionOverwrites' in channel,
+  );
+}
+
+async function copyIncidentChannelContents(
+  sourceChannel: TextChannel,
+  targetChannel: TextChannel,
+  sourceIncident: { id: number; incidentNumber: number | null; channelId: string | null },
+): Promise<void> {
+  await targetChannel.send({
+    embeds: [
+      new EmbedBuilder()
+        .setTitle(`Merged ${formatIncidentReference(sourceIncident)}`)
+        .setDescription(
+          `Copied from <#${sourceIncident.channelId}> before the channel was removed.`,
+        )
+        .setColor(0xf1c40f)
+        .setTimestamp(),
+    ],
+  });
+
+  const messages = await fetchAllMessages(sourceChannel);
+
+  for (const message of messages) {
+    await copyIncidentMessage(message, targetChannel);
+  }
+}
+
+async function fetchAllMessages(channel: TextChannel): Promise<Message[]> {
+  const messages: Message[] = [];
+  let before: string | undefined;
+
+  for (;;) {
+    const batch = await channel.messages.fetch({
+      limit: 100,
+      ...(before ? { before } : {}),
+    });
+    const batchMessages = Array.from(batch.values()) as Message[];
+
+    if (batchMessages.length === 0) {
+      break;
+    }
+
+    messages.push(...batchMessages);
+    before = batchMessages[batchMessages.length - 1]?.id;
+
+    if (batchMessages.length < 100) {
+      break;
+    }
+  }
+
+  return messages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+}
+
+async function copyIncidentMessage(message: Message, targetChannel: TextChannel): Promise<void> {
+  const author = message.author?.tag ?? message.author?.username ?? message.author?.id ?? 'Unknown';
+  const timestamp = message.createdTimestamp
+    ? ` <t:${Math.floor(message.createdTimestamp / 1000)}:f>`
+    : '';
+  const attachments = Array.from(message.attachments.values())
+    .map((attachment) => `[${attachment.name ?? 'Attachment'}](${attachment.url})`)
+    .join('\n');
+  const contentParts = [
+    `**Merged message from ${author}**${timestamp}`,
+    message.content?.trim() || null,
+    attachments ? `Attachments:\n${attachments}` : null,
+  ].filter(Boolean);
+  const embeds = message.embeds.slice(0, 10).map((embed) => EmbedBuilder.from(embed));
+
+  if (contentParts.length === 1 && embeds.length === 0) {
+    return;
+  }
+
+  await targetChannel.send({
+    content: truncateDiscordMessage(contentParts.join('\n')),
+    embeds,
+    allowedMentions: { parse: [] },
+  });
+}
+
+async function sendMergeFollowUp({
+  channel,
+  incidentId,
+  sourceIncident,
+  defendantsAwaitingDefence,
+  stewardRoleIds,
+}: {
+  channel: TextChannel;
+  incidentId: number;
+  sourceIncident: { id: number; incidentNumber: number | null };
+  defendantsAwaitingDefence: string[];
+  stewardRoleIds: string[];
+}): Promise<void> {
+  if (defendantsAwaitingDefence.length > 0) {
+    await channel.send({
+      content: `${defendantsAwaitingDefence.map((userId) => `<@${userId}>`).join(' ')} ${formatIncidentReference(sourceIncident)} was merged into this incident. Please submit your defence here.`,
+      components: [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`defence_done_yes!${incidentId}`)
+            .setLabel('Submit Defence')
+            .setStyle(ButtonStyle.Success),
+        ),
+      ],
+    });
+    return;
+  }
+
+  if (stewardRoleIds.length > 0) {
+    await channel.send(
+      `${stewardRoleIds.map((roleId) => `<@&${roleId}>`).join(' ')} ${formatIncidentReference(sourceIncident)} was merged into this incident, and all selected drivers have submitted their defence.`,
+    );
+  }
+}
+
+function parseStoredIds(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .filter((id): id is string => typeof id === 'string')
+      .map((id) => id.trim())
+      .filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    return value.trim() ? [value.trim()] : [];
+  }
+
+  return [];
+}
+
+function uniqueIds(ids: string[]): string[] {
+  return Array.from(new Set(ids.filter(Boolean)));
+}
+
+function formatIncidentReference(incident: { id: number; incidentNumber: number | null }): string {
+  return `incident-${formatIncidentNumber(incident.incidentNumber ?? incident.id)}`;
+}
+
+function formatIncidentNumber(incidentNumber: number): string {
+  return incidentNumber.toString().padStart(4, '0');
+}
+
+function formatIncidentOptionDescription(incident: {
+  status: string;
+  championshipSlug: string;
+  channelId: string | null;
+}): string {
+  return `${incident.status} | ${incident.championshipSlug}${incident.channelId ? ` | #${incident.channelId}` : ''}`;
+}
+
+function truncateDiscordMessage(value: string): string {
+  return value.length > DISCORD_MESSAGE_LIMIT
+    ? value.slice(0, DISCORD_MESSAGE_LIMIT - 3) + '...'
+    : value;
 }
