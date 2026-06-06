@@ -19,6 +19,7 @@ import {
   SlashCommandBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuInteraction,
+  TextChannel,
   TextInputBuilder,
   TextInputStyle,
 } from 'discord.js';
@@ -44,6 +45,8 @@ const DEFAULT_BUTTON_LABEL = 'Report Incident';
 const DEFAULT_BUTTON_COLOR = 'Red';
 const DEFAULT_BUTTON_MESSAGE =
   'Click the button below to report an incident. You will be asked to provide details.';
+const NFA_VERDICT_COLOR = 0x2ecc71;
+const ACTION_VERDICT_COLOR = 0xe74c3c;
 const INCIDENT_CHANNEL_LOCK_PERMISSIONS = {
   SendMessages: false,
   SendMessagesInThreads: false,
@@ -787,7 +790,7 @@ async function handleClose(
       ...(penaltyValue ? [{ name: 'Penalty', value: penaltyValue, inline: true }] : []),
       { name: 'Description', value: verdictDescription },
     )
-    .setColor(0x2ecc71)
+    .setColor(getVerdictColor(verdictType))
     .setTimestamp();
 
   await modalSubmit.reply({
@@ -795,15 +798,16 @@ async function handleClose(
     embeds: [embed],
   });
 
-  // Lock the channel — remove SEND_MESSAGES from @everyone, keep VIEW_CHANNEL for stewards
+  // Lock the channel: the server can read the closed ticket, but nobody can write to it.
   const channel = interaction.channel;
   if (channel && 'permissionOverwrites' in channel) {
     try {
-      await channel.permissionOverwrites.edit(interaction.guild!.roles.everyone, {
-        ...INCIDENT_CHANNEL_LOCK_PERMISSIONS,
-      });
-      for (const roleId of ticketAccessRoleIds) {
-        await channel.permissionOverwrites.edit(roleId, {
+      for (const targetId of getIncidentClosePermissionTargets(
+        channel as TextChannel,
+        interaction.guild!.roles.everyone.id,
+        ticketAccessRoleIds,
+      )) {
+        await channel.permissionOverwrites.edit(targetId, {
           ViewChannel: true,
           ...INCIDENT_CHANNEL_LOCK_PERMISSIONS,
         });
@@ -824,4 +828,24 @@ async function handleClose(
     where: { id: incident.id },
     data: { status: 'closed' },
   });
+}
+
+function getVerdictColor(verdictType: string): number {
+  return verdictType === 'NFA' ? NFA_VERDICT_COLOR : ACTION_VERDICT_COLOR;
+}
+
+function uniqueIds(ids: string[]): string[] {
+  return Array.from(new Set(ids.filter(Boolean)));
+}
+
+function getIncidentClosePermissionTargets(
+  channel: TextChannel,
+  everyoneRoleId: string,
+  ticketAccessRoleIds: string[],
+): string[] {
+  return uniqueIds([
+    everyoneRoleId,
+    ...Array.from(channel.permissionOverwrites.cache?.keys() ?? []),
+    ...ticketAccessRoleIds,
+  ]);
 }

@@ -502,7 +502,7 @@ describe('incidentCommand', () => {
       );
     });
 
-    it('closes incident and posts verdict embed on submission', async () => {
+    it('closes incident with a green NFA embed and makes the channel read-only', async () => {
       const mockModalSubmit = {
         fields: {
           getTextInputValue: vi.fn((field: string) => {
@@ -527,6 +527,7 @@ describe('incidentCommand', () => {
         id: '987654321',
         awaitMessageComponent: vi.fn().mockResolvedValue(mockVerdictSelectInteraction),
         permissionOverwrites: {
+          cache: new Map([['driver-user-a', {}]]),
           edit: vi.fn(),
         },
       };
@@ -570,11 +571,21 @@ describe('incidentCommand', () => {
       expect(mockModalSubmit.reply).toHaveBeenCalledWith(
         expect.objectContaining({ embeds: expect.any(Array) }),
       );
+      const embedPayload = mockModalSubmit.reply.mock.calls[0][0].embeds[0].data;
+      expect(embedPayload.color).toBe(0x2ecc71);
       expect(mockPrisma.incident.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 1 },
           data: expect.objectContaining({ status: 'closed' }),
         }),
+      );
+      expect(mockChannel.permissionOverwrites.edit).toHaveBeenCalledWith(
+        'everyone-id',
+        expect.objectContaining({ ViewChannel: true, SendMessages: false }),
+      );
+      expect(mockChannel.permissionOverwrites.edit).toHaveBeenCalledWith(
+        'driver-user-a',
+        expect.objectContaining({ ViewChannel: true, SendMessages: false }),
       );
       expect(mockChannel.permissionOverwrites.edit).toHaveBeenCalledWith(
         'ticket-role-a',
@@ -584,6 +595,73 @@ describe('incidentCommand', () => {
         'ticket-role-b',
         expect.objectContaining({ ViewChannel: true, SendMessages: false }),
       );
+    });
+
+    it('uses a red close embed for non-NFA verdicts', async () => {
+      const mockModalSubmit = {
+        fields: {
+          getTextInputValue: vi.fn((field: string) => {
+            if (field === 'verdict_description') return 'Driver caused contact.';
+            return '';
+          }),
+        },
+        reply: vi.fn(),
+        user: { id: 'user1' },
+      };
+
+      const mockVerdictSelectInteraction = {
+        user: { id: 'user1' },
+        values: ['Warning'],
+        showModal: vi.fn(),
+        awaitModalSubmit: vi.fn().mockResolvedValue(mockModalSubmit),
+        editReply: vi.fn(),
+      };
+
+      const mockChannel = {
+        type: 0,
+        id: '987654321',
+        awaitMessageComponent: vi.fn().mockResolvedValue(mockVerdictSelectInteraction),
+        permissionOverwrites: {
+          cache: new Map(),
+          edit: vi.fn(),
+        },
+      };
+
+      const interaction = createMockInteraction({
+        channel: mockChannel,
+        guild: {
+          name: 'Test Guild',
+          iconURL: () => 'https://icon.url',
+          roles: {
+            everyone: { id: 'everyone-id' },
+          },
+        },
+        editReply: vi.fn(),
+      });
+      interaction.options.getSubcommand.mockReturnValue('close');
+      const client = createMockClient();
+
+      mockPrisma.incident.findFirst.mockResolvedValue({
+        id: 1,
+        guildId: '123456789',
+        channelId: '987654321',
+        mychampsIncidentId: null,
+        championshipSlug: 'champ-a',
+        defendants: ['Driver A'],
+        status: 'awaiting_review',
+        defenceSubmitted: [],
+        lastReminderAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      mockPrisma.incident.update.mockResolvedValue({} as never);
+      mockGetSetting.mockResolvedValue(null);
+
+      await incidentCommand.execute(interaction as never, client as never);
+
+      const embedPayload = mockModalSubmit.reply.mock.calls[0][0].embeds[0].data;
+      expect(embedPayload.color).toBe(0xe74c3c);
     });
   });
 });
