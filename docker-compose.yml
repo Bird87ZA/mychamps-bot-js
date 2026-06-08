@@ -7,18 +7,19 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "127.0.0.1:2000:2000"
+      - "127.0.0.1:${DASHBOARD_PORT:-2000}:${DASHBOARD_PORT:-2000}"
     environment:
       DISCORD_TOKEN: ${DISCORD_TOKEN}
       DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
       DATABASE_URL: mysql://discord:discord@db:3306/discord
-      DASHBOARD_PORT: 2000
-      DASHBOARD_BASE_PATH: /bot
+      DASHBOARD_PORT: ${DASHBOARD_PORT:-2000}
+      DASHBOARD_BASE_PATH: ${DASHBOARD_BASE_PATH:-/bot}
       DASHBOARD_REQUIRE_AUTH: ${DASHBOARD_REQUIRE_AUTH:-true}
       DASHBOARD_AUTH_USERNAME: ${DASHBOARD_AUTH_USERNAME:-admin}
       DASHBOARD_AUTH_PASSWORD: ${DASHBOARD_AUTH_PASSWORD:-}
-      VIRTUAL_HOST: ${DASHBOARD_VIRTUAL_HOST:-mychamps.gg/bot}
-      VIRTUAL_PORT: 2000
+      VIRTUAL_HOST: ${DASHBOARD_VIRTUAL_HOST:-mychamps.gg}
+      VIRTUAL_PATH: ${DASHBOARD_VIRTUAL_PATH:-/bot}
+      VIRTUAL_PORT: ${DASHBOARD_PORT:-2000}
       LETSENCRYPT_HOST: ${LETSENCRYPT_HOST:-mychamps.gg}
     networks:
       - app-network
