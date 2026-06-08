@@ -13,7 +13,9 @@ COPY prisma ./prisma
 RUN npx prisma generate
 
 COPY tsconfig.json ./
+COPY vite.dashboard.config.ts ./
 COPY src ./src
+COPY dashboard-ui ./dashboard-ui
 COPY public ./public
 COPY scripts ./scripts
 RUN npm run build

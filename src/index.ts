@@ -115,8 +115,8 @@ function startServices() {
   }
 }
 
-// Start dashboard immediately — it only needs the database, not Discord
-startDashboard(parseInt(process.env.DASHBOARD_PORT ?? '2000'));
+// Start dashboard immediately; Discord-aware routes use the client once it is ready.
+startDashboard(parseInt(process.env.DASHBOARD_PORT ?? '2000'), undefined, client);
 
 client.once(Events.ClientReady, (readyClient) => {
   console.log(`Logged in as ${readyClient.user.tag}`);
