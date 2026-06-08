@@ -1,36 +1,53 @@
 import express from 'express';
 import path from 'path';
-import crypto from 'crypto';
-import { apiRouter } from './api';
-import type { NextFunction, Request, Response } from 'express';
-
-interface DashboardAuthConfig {
-  username?: string;
-  password?: string;
-  requireAuth?: boolean;
-}
+import fs from 'fs';
+import session from 'express-session';
+import type { Client } from 'discord.js';
+import { createApiRouter } from './api';
+import { createAuthRouter } from './auth';
+import { getDashboardSessionSecret } from './config';
 
 export function startDashboard(
   port: number = 3000,
   basePath: string = process.env.DASHBOARD_BASE_PATH ?? '/',
-  authConfig: DashboardAuthConfig = getDashboardAuthConfig(),
+  client?: Client,
 ) {
   const app = express();
   const normalizedBasePath = normalizeBasePath(basePath);
-  const publicDir = path.join(__dirname, '../../public');
+  const dashboardPublicDir = path.join(__dirname, '../../public/dashboard');
+  const legacyPublicDir = path.join(__dirname, '../../public');
+  const publicDir = fs.existsSync(path.join(dashboardPublicDir, 'index.html'))
+    ? dashboardPublicDir
+    : legacyPublicDir;
   const indexFile = path.join(publicDir, 'index.html');
 
+  app.set('trust proxy', true);
   app.use(express.json());
+  app.use(
+    normalizedBasePath,
+    session({
+      name: 'mychamps_bot_dashboard',
+      secret: getDashboardSessionSecret(),
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      },
+    }),
+  );
 
-  const authMiddleware = createDashboardAuthMiddleware(authConfig);
-  if (authMiddleware) {
-    app.use(normalizedBasePath, authMiddleware);
-  }
+  app.use(normalizedBasePath, createAuthRouter(normalizedBasePath));
+  app.use(
+    joinBasePath(normalizedBasePath, '/api'),
+    createApiRouter({
+      basePath: normalizedBasePath,
+      client,
+    }),
+  );
 
-  // API routes
-  app.use(joinBasePath(normalizedBasePath, '/api'), apiRouter);
-
-  // Serve static frontend
   if (normalizedBasePath !== '/') {
     app.use((req, res, next) => {
       if (req.path === normalizedBasePath) {
@@ -45,23 +62,29 @@ export function startDashboard(
     });
   }
 
+  app.use(normalizedBasePath, express.static(publicDir));
   app.get(joinBasePath(normalizedBasePath, '/'), (_req, res) => {
     res.sendFile(indexFile);
   });
+  app.get(spaRoutePattern(normalizedBasePath), (req, res, next) => {
+    if (req.path.startsWith(joinBasePath(normalizedBasePath, '/api'))) {
+      next();
+      return;
+    }
 
-  app.use(normalizedBasePath, express.static(publicDir));
+    res.sendFile(indexFile);
+  });
+
+  app.use(
+    (error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      console.error('[Dashboard] Error:', error);
+      res.status(500).send('Dashboard server error.');
+    },
+  );
 
   app.listen(port, () => {
     console.log(`Dashboard running at http://localhost:${port}${normalizedBasePath}`);
   });
-}
-
-function getDashboardAuthConfig(): DashboardAuthConfig {
-  return {
-    username: process.env.DASHBOARD_AUTH_USERNAME,
-    password: process.env.DASHBOARD_AUTH_PASSWORD,
-    requireAuth: process.env.DASHBOARD_REQUIRE_AUTH === 'true',
-  };
 }
 
 function normalizeBasePath(basePath: string): string {
@@ -81,61 +104,14 @@ function joinBasePath(basePath: string, route: string): string {
   return route === '/' ? `${basePath}/` : `${basePath}${route}`;
 }
 
-function createDashboardAuthMiddleware(config: DashboardAuthConfig) {
-  const username = config.username?.trim();
-  const password = config.password ?? '';
-
-  if (!username || !password) {
-    if (!config.requireAuth) {
-      return null;
-    }
-
-    return (_req: Request, res: Response, _next: NextFunction) => {
-      res.status(503).send('Dashboard authentication is not configured.');
-    };
+function spaRoutePattern(basePath: string): RegExp {
+  if (basePath === '/') {
+    return /^\/(?!api(?:\/|$)).*/;
   }
 
-  return (req: Request, res: Response, next: NextFunction) => {
-    const credentials = parseBasicAuth(req.headers.authorization);
-
-    if (
-      credentials &&
-      timingSafeEqual(credentials.username, username) &&
-      timingSafeEqual(credentials.password, password)
-    ) {
-      next();
-      return;
-    }
-
-    res.setHeader('WWW-Authenticate', 'Basic realm="MyChamps Bot Dashboard"');
-    res.status(401).send('Authentication required.');
-  };
+  return new RegExp(`^${escapeRegex(basePath)}(?:/.*)?$`);
 }
 
-function parseBasicAuth(header: string | undefined): { username: string; password: string } | null {
-  if (!header?.startsWith('Basic ')) {
-    return null;
-  }
-
-  const decoded = Buffer.from(header.slice('Basic '.length), 'base64').toString('utf8');
-  const separator = decoded.indexOf(':');
-
-  if (separator === -1) {
-    return null;
-  }
-
-  return {
-    username: decoded.slice(0, separator),
-    password: decoded.slice(separator + 1),
-  };
-}
-
-function timingSafeEqual(actual: string, expected: string): boolean {
-  const actualBuffer = Buffer.from(actual);
-  const expectedBuffer = Buffer.from(expected);
-
-  return (
-    actualBuffer.length === expectedBuffer.length &&
-    crypto.timingSafeEqual(actualBuffer, expectedBuffer)
-  );
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

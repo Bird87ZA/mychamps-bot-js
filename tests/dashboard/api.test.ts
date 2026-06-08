@@ -1,67 +1,83 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import express from 'express';
+import express, { type Request, type Response, type NextFunction } from 'express';
 import request from 'supertest';
 import { prisma } from '../../src/database';
+import { createApiRouter } from '../../src/dashboard/api';
 
-// Must import after mocks are set up (setup.ts handles the mock)
-import { apiRouter } from '../../src/dashboard/api';
+vi.mock('../../src/services/myChampsApiClient', () => ({
+  MyChampsApiClient: {
+    fromGuild: vi.fn(async () => ({
+      getManagedStatsLeagues: vi.fn(async () => []),
+      submitVerdict: vi.fn(),
+    })),
+  },
+}));
+
+vi.mock('../../src/utils/reminders', () => ({
+  rebuildReminders: vi.fn(async () => undefined),
+}));
 
 const mockPrisma = vi.mocked(prisma);
 
-const app = express();
-app.use(express.json());
-app.use('/api', apiRouter);
-
 beforeEach(() => {
   vi.clearAllMocks();
+  mockPrisma.setting.findMany.mockResolvedValue([]);
+  mockPrisma.schedule.findMany.mockResolvedValue([]);
+  mockPrisma.reminder.findMany.mockResolvedValue([]);
+  mockPrisma.attendance.findMany.mockResolvedValue([]);
+  mockPrisma.randomiser.findMany.mockResolvedValue([]);
+  mockPrisma.incidentButton.findMany.mockResolvedValue([]);
+  mockPrisma.incident.findMany.mockResolvedValue([]);
+  mockPrisma.dashboardAccessRole.findMany.mockResolvedValue([]);
 });
 
 describe('Dashboard API', () => {
-  describe('GET /api/schedules', () => {
-    it('returns schedules with reminder counts', async () => {
-      mockPrisma.schedule.findMany.mockResolvedValue([
-        {
-          id: 1,
-          guildId: BigInt(123),
-          channelId: BigInt(456),
-          messageId: null,
-          guildName: 'Test',
-          name: 'Event',
-          date: new Date('2099-01-01'),
-          dateUtc: new Date('2099-01-01'),
-          closingDate: null,
-          closingDateUtc: null,
-          image: null,
-          timeBefore: '-6',
-          botPosted: false,
-          attendees: {},
-          closed: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ]);
-      mockPrisma.reminder.groupBy.mockResolvedValue([{ scheduleId: '1', _count: 3 }] as never);
+  it('reports anonymous users without requiring a dashboard session', async () => {
+    const res = await request(createApp()).get('/api/me');
 
-      const res = await request(app).get('/api/schedules');
-
-      expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0].name).toBe('Event');
-      expect(res.body[0].reminderCount).toBe(3);
-    });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ authenticated: false, user: null });
   });
 
-  describe('GET /api/schedules/:id', () => {
-    it('returns schedule with reminders', async () => {
-      mockPrisma.schedule.findUnique.mockResolvedValue({
-        id: 1,
+  it('requires a dashboard session for server routes', async () => {
+    const res = await request(createApp()).get('/api/servers');
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Authentication required');
+  });
+
+  it('returns the user servers from the Discord OAuth session', async () => {
+    const res = await request(createApp(authenticatedSession(), installedClient())).get(
+      '/api/servers',
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.servers).toEqual([
+      expect.objectContaining({
+        id: '123',
+        name: 'Test Guild',
+        installed: true,
+        canManage: true,
+        canEdit: true,
+      }),
+    ]);
+  });
+
+  it('returns guild bootstrap data with redacted secrets and readable counts', async () => {
+    mockPrisma.setting.findMany.mockResolvedValue([
+      setting('mychamps-api-token', 'secret-token'),
+      setting('timezone', 'UTC'),
+    ]);
+    mockPrisma.schedule.findMany.mockResolvedValue([
+      {
+        id: 10,
         guildId: BigInt(123),
         channelId: BigInt(456),
         messageId: null,
-        guildName: 'Test',
-        name: 'Event',
-        date: new Date('2099-01-01'),
-        dateUtc: new Date('2099-01-01'),
+        guildName: 'Test Guild',
+        name: 'Race',
+        date: new Date('2099-01-01T18:00:00Z'),
+        dateUtc: new Date('2099-01-01T18:00:00Z'),
         closingDate: null,
         closingDateUtc: null,
         image: null,
@@ -69,243 +85,143 @@ describe('Dashboard API', () => {
         botPosted: false,
         attendees: {},
         closed: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      mockPrisma.reminder.findMany.mockResolvedValue([]);
-
-      const res = await request(app).get('/api/schedules/1');
-
-      expect(res.status).toBe(200);
-      expect(res.body.name).toBe('Event');
-    });
-
-    it('returns 404 when not found', async () => {
-      mockPrisma.schedule.findUnique.mockResolvedValue(null);
-
-      const res = await request(app).get('/api/schedules/999');
-
-      expect(res.status).toBe(404);
-    });
-  });
-
-  describe('PUT /api/schedules/:id', () => {
-    it('updates schedule fields', async () => {
-      mockPrisma.schedule.update.mockResolvedValue({
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ]);
+    mockPrisma.reminder.findMany.mockResolvedValue([
+      {
         id: 1,
-        guildId: BigInt(123),
-        channelId: BigInt(456),
-        messageId: null,
-        guildName: 'Test',
-        name: 'Updated Event',
-        date: new Date(),
-        dateUtc: new Date(),
-        closingDate: null,
-        closingDateUtc: null,
-        image: null,
-        timeBefore: '-6',
-        botPosted: false,
-        attendees: {},
-        closed: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+        scheduleId: '10',
+        remindAt: new Date('2098-12-31T18:00:00Z'),
+        reminded: false,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ]);
 
-      const res = await request(app)
-        .put('/api/schedules/1')
-        .send({ name: 'Updated Event', closed: true });
+    const res = await request(createApp(authenticatedSession())).get('/api/servers/123/bootstrap');
 
-      expect(res.status).toBe(200);
-      expect(mockPrisma.schedule.update).toHaveBeenCalledWith({
-        where: { id: 1 },
-        data: { name: 'Updated Event', closed: true },
-      });
-    });
-
-    it('returns 404 when update target is missing', async () => {
-      mockPrisma.schedule.update.mockRejectedValue(new Error('Not found'));
-
-      const res = await request(app).put('/api/schedules/999').send({ name: 'test' });
-
-      expect(res.status).toBe(404);
-      expect(res.body.message).toContain('record no longer exists');
-    });
+    expect(res.status).toBe(200);
+    expect(res.body.guild).toEqual(expect.objectContaining({ id: '123', canEdit: true }));
+    expect(res.body.settings).toEqual([
+      expect.objectContaining({ key: 'mychamps-api-token', value: '[redacted]' }),
+      expect.objectContaining({ key: 'timezone', value: 'UTC' }),
+    ]);
+    expect(res.body.schedules[0]).toEqual(
+      expect.objectContaining({
+        name: 'Race',
+        reminderCount: 1,
+        postTimeDaysBefore: '6',
+      }),
+    );
+    expect(res.body.reminders[0]).toEqual(expect.objectContaining({ scheduleName: 'Race' }));
   });
 
-  describe('DELETE /api/schedules/:id', () => {
-    it('deletes schedule and its reminders', async () => {
-      mockPrisma.reminder.deleteMany.mockResolvedValue({ count: 0 });
-      mockPrisma.schedule.delete.mockResolvedValue({} as never);
+  it('deletes schedule reminders before deleting the schedule', async () => {
+    mockPrisma.reminder.deleteMany.mockResolvedValue({ count: 2 });
+    mockPrisma.schedule.delete.mockResolvedValue({} as never);
 
-      const res = await request(app).delete('/api/schedules/1');
+    const res = await request(createApp(authenticatedSession())).delete(
+      '/api/servers/123/schedules/10',
+    );
 
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(mockPrisma.reminder.deleteMany).toHaveBeenCalledWith({
+      where: { scheduleId: '10' },
     });
-
-    it('returns 500 on server error', async () => {
-      mockPrisma.reminder.deleteMany.mockRejectedValue(new Error('fail'));
-
-      const res = await request(app).delete('/api/schedules/999');
-
-      expect(res.status).toBe(500);
-      expect(res.body.error).toBe('Dashboard server error');
-    });
+    expect(mockPrisma.schedule.delete).toHaveBeenCalledWith({ where: { id: 10 } });
   });
 
-  describe('GET /api/reminders', () => {
-    it('returns reminders with schedule info', async () => {
-      mockPrisma.reminder.findMany.mockResolvedValue([
-        {
-          id: 1,
-          scheduleId: '10',
-          remindAt: new Date('2099-01-01'),
-          reminded: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ]);
-      mockPrisma.schedule.findMany.mockResolvedValue([
-        { id: 10, name: 'Event', guildName: 'Guild' } as never,
-      ]);
+  it('deletes blank settings instead of storing empty strings', async () => {
+    mockPrisma.setting.deleteMany.mockResolvedValue({ count: 1 });
 
-      const res = await request(app).get('/api/reminders');
+    const res = await request(createApp(authenticatedSession()))
+      .put('/api/servers/123/settings')
+      .send({ settings: { 'post-time': '' } });
 
-      expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0].schedule.name).toBe('Event');
+    expect(res.status).toBe(200);
+    expect(mockPrisma.setting.deleteMany).toHaveBeenCalledWith({
+      where: { guildId: '123', key: 'post-time' },
     });
+    expect(mockPrisma.setting.upsert).not.toHaveBeenCalled();
   });
 
-  describe('DELETE /api/reminders/:id', () => {
-    it('deletes a reminder', async () => {
-      mockPrisma.reminder.delete.mockResolvedValue({} as never);
+  it('stores dashboard access roles for users with Manage Server access', async () => {
+    mockPrisma.dashboardAccessRole.deleteMany.mockResolvedValue({ count: 1 });
+    mockPrisma.dashboardAccessRole.createMany.mockResolvedValue({ count: 2 });
 
-      const res = await request(app).delete('/api/reminders/1');
+    const res = await request(createApp(authenticatedSession()))
+      .put('/api/servers/123/access-roles')
+      .send({ roleIds: ['111', '222'] });
 
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
+    expect(res.status).toBe(200);
+    expect(mockPrisma.dashboardAccessRole.deleteMany).toHaveBeenCalledWith({
+      where: { guildId: '123' },
     });
-  });
-
-  describe('GET /api/attendance', () => {
-    it('returns all attendance configs', async () => {
-      mockPrisma.attendance.findMany.mockResolvedValue([
-        {
-          id: 1,
-          guildId: BigInt(123),
-          channelId: BigInt(456),
-          fullTime: BigInt(111),
-          reserve: null,
-          commentator: null,
-          attendees: {},
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ]);
-
-      const res = await request(app).get('/api/attendance');
-
-      expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-    });
-  });
-
-  describe('DELETE /api/attendance/:id', () => {
-    it('deletes attendance config', async () => {
-      mockPrisma.attendance.delete.mockResolvedValue({} as never);
-
-      const res = await request(app).delete('/api/attendance/1');
-
-      expect(res.status).toBe(200);
-    });
-  });
-
-  describe('GET /api/randomisers', () => {
-    it('returns all randomisers', async () => {
-      mockPrisma.randomiser.findMany.mockResolvedValue([]);
-
-      const res = await request(app).get('/api/randomisers');
-
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
-    });
-  });
-
-  describe('DELETE /api/randomisers/:id', () => {
-    it('deletes a randomiser', async () => {
-      mockPrisma.randomiser.delete.mockResolvedValue({} as never);
-
-      const res = await request(app).delete('/api/randomisers/1');
-
-      expect(res.status).toBe(200);
-    });
-  });
-
-  describe('GET /api/settings', () => {
-    it('returns all settings', async () => {
-      mockPrisma.setting.findMany.mockResolvedValue([
-        {
-          id: 1,
-          guildId: '123',
-          key: 'timezone',
-          value: 'UTC',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        {
-          id: 2,
-          guildId: '123',
-          key: 'mychamps-api-token',
-          value: 'secret-token',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ]);
-
-      const res = await request(app).get('/api/settings');
-
-      expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(2);
-      expect(res.body[1].value).toBe('[redacted]');
-    });
-  });
-
-  describe('PUT /api/settings/:id', () => {
-    it('updates setting value', async () => {
-      mockPrisma.setting.update.mockResolvedValue({
-        id: 1,
-        guildId: '123',
-        key: 'timezone',
-        value: 'Africa/Johannesburg',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-
-      const res = await request(app).put('/api/settings/1').send({ value: 'Africa/Johannesburg' });
-
-      expect(res.status).toBe(200);
-    });
-  });
-
-  describe('GET /api/stats', () => {
-    it('returns entity counts', async () => {
-      mockPrisma.schedule.count.mockResolvedValue(5);
-      mockPrisma.reminder.count.mockResolvedValue(10);
-      mockPrisma.attendance.count.mockResolvedValue(3);
-      mockPrisma.randomiser.count.mockResolvedValue(2);
-      mockPrisma.setting.count.mockResolvedValue(8);
-
-      const res = await request(app).get('/api/stats');
-
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual({
-        schedules: 5,
-        reminders: 10,
-        attendance: 3,
-        randomisers: 2,
-        settings: 8,
-      });
+    expect(mockPrisma.dashboardAccessRole.createMany).toHaveBeenCalledWith({
+      data: [
+        { guildId: '123', roleId: '111' },
+        { guildId: '123', roleId: '222' },
+      ],
+      skipDuplicates: true,
     });
   });
 });
+
+function createApp(session: Record<string, unknown> = {}, client?: unknown) {
+  const app = express();
+  app.use(express.json());
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    req.session = session as Request['session'];
+    next();
+  });
+  app.use('/api', createApiRouter({ client: client as never }));
+  return app;
+}
+
+function installedClient() {
+  return {
+    guilds: {
+      cache: {
+        map: (mapper: (guild: { id: string }) => string) => [{ id: '123' }].map(mapper),
+      },
+    },
+  };
+}
+
+function authenticatedSession() {
+  return {
+    dashboard: {
+      accessToken: 'discord-token',
+      user: {
+        id: '42',
+        username: 'tester',
+        discriminator: '0',
+        avatar: null,
+        globalName: 'Tester',
+      },
+      guilds: [
+        {
+          id: '123',
+          name: 'Test Guild',
+          icon: null,
+          owner: true,
+          permissions: '0',
+        },
+      ],
+    },
+  };
+}
+
+function setting(key: string, value: string) {
+  return {
+    id: Math.floor(Math.random() * 10000),
+    guildId: '123',
+    key,
+    value,
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+  };
+}

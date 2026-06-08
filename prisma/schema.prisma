@@ -78,6 +78,18 @@ model Setting {
   @@map("settings")
 }
 
+model DashboardAccessRole {
+  id        Int      @id @default(autoincrement())
+  guildId   String   @map("guild_id")
+  roleId    String   @map("role_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([guildId, roleId])
+  @@index([guildId])
+  @@map("dashboard_access_roles")
+}
+
 model Reminder {
   id         Int      @id @default(autoincrement())
   scheduleId String   @map("schedule_id")

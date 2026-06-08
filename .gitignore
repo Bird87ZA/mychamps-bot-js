@@ -1,5 +1,6 @@
 node_modules/
 dist/
+public/dashboard/
 .env
 *.js.map
 *.d.ts
