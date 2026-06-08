@@ -22,7 +22,7 @@ export function getDashboardPublicBaseUrl(req: Request, basePath: string): strin
 }
 
 export function getDiscordClientId(): string {
-  const clientId = process.env.DISCORD_OAUTH_CLIENT_ID ?? process.env.DISCORD_CLIENT_ID;
+  const clientId = optionalEnv('DISCORD_OAUTH_CLIENT_ID') ?? optionalEnv('DISCORD_CLIENT_ID');
 
   if (!clientId) {
     throw new Error('DISCORD_CLIENT_ID or DISCORD_OAUTH_CLIENT_ID is required.');
@@ -32,7 +32,7 @@ export function getDiscordClientId(): string {
 }
 
 export function getDiscordClientSecret(): string {
-  const clientSecret = process.env.DISCORD_OAUTH_CLIENT_SECRET;
+  const clientSecret = optionalEnv('DISCORD_OAUTH_CLIENT_SECRET');
 
   if (!clientSecret) {
     throw new Error('DISCORD_OAUTH_CLIENT_SECRET is required for dashboard login.');
@@ -42,7 +42,7 @@ export function getDiscordClientSecret(): string {
 }
 
 export function getDashboardSessionSecret(): string {
-  const secret = process.env.DASHBOARD_SESSION_SECRET;
+  const secret = optionalEnv('DASHBOARD_SESSION_SECRET');
 
   if (secret) {
     return secret;
@@ -56,10 +56,15 @@ export function getDashboardSessionSecret(): string {
 }
 
 export function getBotInvitePermissions(): string {
-  return process.env.DISCORD_BOT_PERMISSIONS?.trim() || DEFAULT_BOT_PERMISSIONS;
+  return optionalEnv('DISCORD_BOT_PERMISSIONS') ?? DEFAULT_BOT_PERMISSIONS;
 }
 
 export function dashboardApiPath(basePath: string, path: string): string {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   return basePath === '/' ? `/api${normalizedPath}` : `${basePath}/api${normalizedPath}`;
+}
+
+function optionalEnv(key: string): string | undefined {
+  const value = process.env[key]?.trim();
+  return value || undefined;
 }
