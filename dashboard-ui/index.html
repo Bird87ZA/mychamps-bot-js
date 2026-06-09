@@ -4,6 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MyChamps Bot Dashboard</title>
+    <link rel="preload" as="style" href="https://mychamps.gg/build/assets/app-BdZzU3OB.css" />
+    <link
+      id="mychamps-site-css"
+      rel="stylesheet"
+      href="https://mychamps.gg/build/assets/app-BdZzU3OB.css"
+    />
+    <link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:400,700" rel="stylesheet" />
+    <script>
+      fetch('https://mychamps.gg/build/manifest.json')
+        .then((response) => (response.ok ? response.json() : null))
+        .then((manifest) => {
+          const file =
+            manifest && manifest['resources/css/app.css'] && manifest['resources/css/app.css'].file;
+          if (!file) return;
+          const href = `https://mychamps.gg/build/${file}`;
+          const current = document.getElementById('mychamps-site-css');
+          if (current && current.getAttribute('href') !== href) {
+            current.setAttribute('href', href);
+          }
+        })
+        .catch(() => {});
+    </script>
   </head>
   <body>
     <div id="app"></div>

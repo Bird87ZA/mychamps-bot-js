@@ -25,6 +25,18 @@ export interface DiscordRoleOption extends DiscordOption {
   position: number;
 }
 
+export interface DiscordChannelOption extends DiscordOption {
+  type: number;
+  parentId: string | null;
+}
+
+export interface MyChampsChampionshipOption extends DiscordOption {
+  slug: string;
+  teamId?: number;
+  teamName?: string;
+  label: string;
+}
+
 export interface SettingRecord {
   id: number;
   guildId: string;
@@ -43,9 +55,9 @@ export interface DashboardBootstrap {
   };
   metadata: {
     roles: DiscordRoleOption[];
-    channels: Array<DiscordOption & { type: number; parentId: string | null }>;
-    textChannels: DiscordOption[];
-    categories: DiscordOption[];
+    channels: DiscordChannelOption[];
+    textChannels: DiscordChannelOption[];
+    categories: DiscordChannelOption[];
   };
   settings: SettingRecord[];
   schedules: DashboardRecord[];
@@ -56,6 +68,7 @@ export interface DashboardBootstrap {
   incidents: DashboardRecord[];
   accessRoles: DashboardRecord[];
   myChampsLeagues: DiscordOption[];
+  myChampsChampionships: MyChampsChampionshipOption[];
 }
 
 export type DashboardRecord = Record<string, unknown> & { id: number };

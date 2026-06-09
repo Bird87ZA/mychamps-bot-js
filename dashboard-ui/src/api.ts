@@ -32,7 +32,9 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(payload.error || payload.message || `Dashboard request failed (${response.status}).`);
+    throw new Error(
+      payload.error || payload.message || `Dashboard request failed (${response.status}).`,
+    );
   }
 
   return payload as T;
@@ -58,6 +60,16 @@ export async function saveRecord(
 ): Promise<void> {
   await apiRequest(`/servers/${guildId}/${resource}${id ? `/${id}` : ''}`, {
     method: id ? 'PUT' : 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createAttendanceSchedule(
+  guildId: string,
+  payload: { attendance: Record<string, unknown>; schedule: Record<string, unknown> },
+): Promise<void> {
+  await apiRequest(`/servers/${guildId}/attendance-schedules`, {
+    method: 'POST',
     body: JSON.stringify(payload),
   });
 }

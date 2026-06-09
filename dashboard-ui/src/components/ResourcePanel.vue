@@ -40,17 +40,18 @@ function editItem(item: DashboardRecord): void {
 
   for (const field of props.fields) {
     const sourceValue = recordValue(item, field.sourceKey ?? field.key);
-    form[field.key] = field.type === 'datetime'
-      ? toDatetimeInput(sourceValue)
-      : field.type === 'multiselect'
-        ? Array.isArray(sourceValue)
-          ? sourceValue
-          : []
-        : field.type === 'textarea' && Array.isArray(sourceValue)
-          ? sourceValue.join(', ')
-          : field.type === 'checkbox'
-            ? Boolean(sourceValue)
-            : sourceValue ?? '';
+    form[field.key] =
+      field.type === 'datetime'
+        ? toDatetimeInput(sourceValue)
+        : field.type === 'multiselect'
+          ? Array.isArray(sourceValue)
+            ? sourceValue
+            : []
+          : field.type === 'textarea' && Array.isArray(sourceValue)
+            ? sourceValue.join(', ')
+            : field.type === 'checkbox'
+              ? Boolean(sourceValue)
+              : (sourceValue ?? '');
   }
 }
 
@@ -148,7 +149,13 @@ resetForm();
               v-else
               v-model="form[field.key]"
               class="input"
-              :type="field.type === 'number' ? 'number' : field.type === 'datetime' ? 'datetime-local' : 'text'"
+              :type="
+                field.type === 'number'
+                  ? 'number'
+                  : field.type === 'datetime'
+                    ? 'datetime-local'
+                    : 'text'
+              "
               :placeholder="field.placeholder"
               :required="field.required"
             />
@@ -177,12 +184,20 @@ resetForm();
           <tbody>
             <tr v-for="item in items" :key="item.id">
               <td v-for="column in columns" :key="column.key">
-                {{ column.format === 'date' ? formatDate(recordValue(item, column.key)) : displayValue(recordValue(item, column.key)) }}
+                {{
+                  column.format === 'date'
+                    ? formatDate(recordValue(item, column.key))
+                    : displayValue(recordValue(item, column.key))
+                }}
               </td>
               <td v-if="canEdit">
                 <div class="actions">
-                  <button class="button secondary" type="button" @click="editItem(item)">Edit</button>
-                  <button class="button danger" type="button" @click="removeItem(item)">Delete</button>
+                  <button class="button secondary" type="button" @click="editItem(item)">
+                    Edit
+                  </button>
+                  <button class="button danger" type="button" @click="removeItem(item)">
+                    Delete
+                  </button>
                 </div>
               </td>
             </tr>

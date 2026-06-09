@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { reactive, shallowRef, watch } from 'vue';
 import { apiRequest } from '../api';
+import HelpTooltip from './HelpTooltip.vue';
 import type { DashboardBootstrap } from '../types';
 
 const props = defineProps<{
@@ -18,7 +19,6 @@ const form = reactive({
   remindAttendees: '',
   incidentReminderInterval: '',
   myChampsApiToken: '',
-  incidentsCategory: '',
   ticketAccessRoles: [] as string[],
   statsLeagueIds: [] as string[],
 });
@@ -32,7 +32,6 @@ watch(
     form.remindAttendees = map.get('remind-attendees')?.value ?? '';
     form.incidentReminderInterval = map.get('incident-reminder-interval')?.value ?? '';
     form.myChampsApiToken = map.get('mychamps-api-token')?.value ?? '';
-    form.incidentsCategory = map.get('incidents-category')?.value ?? '';
     form.ticketAccessRoles = parseArraySetting(map.get('ticket-access-roles')?.value);
     form.statsLeagueIds = (map.get('stats-league-ids')?.parsedValue ?? []).map(String);
   },
@@ -54,7 +53,6 @@ async function save(): Promise<void> {
           'remind-attendees': form.remindAttendees,
           'incident-reminder-interval': form.incidentReminderInterval,
           'mychamps-api-token': form.myChampsApiToken,
-          'incidents-category': form.incidentsCategory,
           'ticket-access-roles': form.ticketAccessRoles,
           'stats-league-ids': form.statsLeagueIds,
         },
@@ -78,75 +76,140 @@ function parseArraySetting(value: string | undefined): string[] {
     const decoded = JSON.parse(value) as unknown;
     return Array.isArray(decoded) ? decoded.map(String) : [];
   } catch {
-    return value.split(',').map((item) => item.trim()).filter(Boolean);
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
   }
 }
 </script>
 
 <template>
-  <form class="panel" @submit.prevent="save">
-    <div class="panel-header">
-      <h2 class="panel-title">Settings</h2>
+  <form class="settings-layout" @submit.prevent="save">
+    <div class="settings-toolbar">
+      <div>
+        <h2 class="section-title">Settings</h2>
+        <p class="section-subtitle">Server-wide defaults used by the dashboard and bot commands.</p>
+      </div>
       <button class="button" type="submit" :disabled="saving">Save settings</button>
     </div>
-    <div class="panel-body grid">
-      <div v-if="status" class="status">{{ status }}</div>
-      <div v-if="error" class="error">{{ error }}</div>
-      <div class="form-grid">
-        <label class="field">
-          <span class="label">Timezone</span>
-          <input v-model="form.timezone" class="input" placeholder="Europe/Berlin" />
-        </label>
-        <label class="field">
-          <span class="label">Post time days before</span>
-          <input v-model="form.postTime" class="input" type="number" min="0" />
-        </label>
-        <label class="field">
-          <span class="label">Attendee reminder hours</span>
-          <input v-model="form.remindAttendees" class="input" type="number" min="0" />
-        </label>
-        <label class="field">
-          <span class="label">Incident reminder hours</span>
-          <input v-model="form.incidentReminderInterval" class="input" type="number" min="0" />
-        </label>
-        <label class="field full">
-          <span class="label">MyChamps API token</span>
-          <input v-model="form.myChampsApiToken" class="input" />
-        </label>
-        <label class="field">
-          <span class="label">Incidents category</span>
-          <select v-model="form.incidentsCategory" class="select">
-            <option value="">Disabled</option>
-            <option
-              v-for="category in bootstrap.metadata.categories"
-              :key="category.id"
-              :value="category.id"
-            >
-              {{ category.name }}
-            </option>
-          </select>
-        </label>
-        <label class="field">
-          <span class="label">Stats leagues</span>
-          <select v-model="form.statsLeagueIds" class="select" multiple>
-            <option
-              v-for="league in bootstrap.myChampsLeagues"
-              :key="league.id"
-              :value="league.id"
-            >
-              {{ league.name }}
-            </option>
-          </select>
-        </label>
-        <label class="field full">
-          <span class="label">Ticket access roles</span>
-          <select v-model="form.ticketAccessRoles" class="select" multiple>
-            <option v-for="role in bootstrap.metadata.roles" :key="role.id" :value="role.id">
-              {{ role.name }}
-            </option>
-          </select>
-        </label>
-      </div>
+
+    <div v-if="status" class="status">{{ status }}</div>
+    <div v-if="error" class="error">{{ error }}</div>
+
+    <div class="settings-grid">
+      <section class="panel settings-card">
+        <div class="panel-header">
+          <h3 class="panel-title">General</h3>
+        </div>
+        <div class="panel-body form-grid">
+          <label class="field">
+            <span class="label-row">
+              <span class="label">Timezone</span>
+              <HelpTooltip
+                text="Used to convert schedule dates into UTC before the bot posts attendance and reminders."
+              />
+            </span>
+            <input v-model="form.timezone" class="input" placeholder="Europe/Berlin" />
+          </label>
+
+          <label class="field full">
+            <span class="label-row">
+              <span class="label">MyChamps API token</span>
+              <HelpTooltip
+                text="Authorises this Discord server to read championship data and sync incident verdicts with MyChamps."
+              />
+            </span>
+            <input v-model="form.myChampsApiToken" class="input" autocomplete="off" />
+          </label>
+
+          <label class="field">
+            <span class="label-row">
+              <span class="label">Pull stats from</span>
+              <HelpTooltip
+                text="Controls which MyChamps leagues are included when users run the /stats command."
+              />
+            </span>
+            <select v-model="form.statsLeagueIds" class="select" multiple>
+              <option
+                v-for="league in bootstrap.myChampsLeagues"
+                :key="league.id"
+                :value="league.id"
+              >
+                {{ league.name }}
+              </option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="label-row">
+              <span class="label">Ticket access roles</span>
+              <HelpTooltip
+                text="Fallback Discord roles that can view and respond in incident ticket channels when a button has no roles set."
+              />
+            </span>
+            <select v-model="form.ticketAccessRoles" class="select" multiple>
+              <option v-for="role in bootstrap.metadata.roles" :key="role.id" :value="role.id">
+                {{ role.name }}
+              </option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel settings-card">
+        <div class="panel-header">
+          <h3 class="panel-title">Attendance</h3>
+        </div>
+        <div class="panel-body form-grid">
+          <label class="field">
+            <span class="label-row">
+              <span class="label">Post time days before</span>
+              <HelpTooltip
+                text="Default number of days before a round that the attendance message should be posted."
+              />
+            </span>
+            <input v-model="form.postTime" class="input" type="number" min="0" />
+          </label>
+
+          <label class="field">
+            <span class="label-row">
+              <span class="label">Attendee reminder hours</span>
+              <HelpTooltip
+                text="How often the bot reminds users who have not selected attendance. Use 0 or leave blank to disable reminders."
+              />
+            </span>
+            <input v-model="form.remindAttendees" class="input" type="number" min="0" />
+          </label>
+        </div>
+      </section>
+
+      <section class="panel settings-card">
+        <div class="panel-header">
+          <h3 class="panel-title">Incident Buttons</h3>
+        </div>
+        <div class="panel-body form-grid">
+          <label class="field">
+            <span class="label-row">
+              <span class="label">Incident reminder hours</span>
+              <HelpTooltip
+                text="How often stewards are reminded about open incident tickets. Use 0 or leave blank to disable these reminders."
+              />
+            </span>
+            <input v-model="form.incidentReminderInterval" class="input" type="number" min="0" />
+          </label>
+
+          <div class="field full">
+            <span class="label-row">
+              <span class="label">Incident categories</span>
+              <HelpTooltip
+                text="Incident categories are configured per incident button below, so each button can create tickets in its own category."
+              />
+            </span>
+            <p class="muted compact-copy">Set the incident category on each incident button.</p>
+          </div>
+        </div>
+      </section>
     </div>
   </form>
 </template>

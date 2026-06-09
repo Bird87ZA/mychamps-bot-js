@@ -34,7 +34,9 @@ async function closeIncident(): Promise<void> {
         body: JSON.stringify(form),
       },
     );
-    status.value = response.warning ? `Closed with warning: ${response.warning}` : 'Incident closed.';
+    status.value = response.warning
+      ? `Closed with warning: ${response.warning}`
+      : 'Incident closed.';
     selectedIncident.value = null;
     form.verdict = 'NFA';
     form.penaltyValue = '';
@@ -53,7 +55,9 @@ async function closeIncident(): Promise<void> {
     <form v-if="selectedIncident" class="panel" @submit.prevent="closeIncident">
       <div class="panel-header">
         <h2 class="panel-title">Close Incident #{{ selectedIncident.id }}</h2>
-        <button class="button secondary" type="button" @click="selectedIncident = null">Cancel</button>
+        <button class="button secondary" type="button" @click="selectedIncident = null">
+          Cancel
+        </button>
       </div>
       <div class="panel-body grid">
         <div v-if="status" class="status">{{ status }}</div>
