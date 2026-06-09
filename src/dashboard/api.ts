@@ -13,6 +13,10 @@ import { prisma } from '../database';
 import { rebuildReminders } from '../utils/reminders';
 import { isValidTimezone, parseDate, convertToUtc } from '../utils/timezone';
 import { getTicketAccessRoleIds } from '../utils/incidentSettings';
+import {
+  getIncidentClosePermissionTargets,
+  INCIDENT_CHANNEL_LOCK_PERMISSIONS,
+} from '../utils/incidentPermissions';
 import { MyChampsApiClient } from '../services/myChampsApiClient';
 import { STATS_SETTING_KEY, parseStatsLeagueIds } from '../commands/stats';
 import {
@@ -1029,7 +1033,13 @@ async function countIncidentChannelComments(
 async function closeIncident(
   client: Client | undefined,
   guildId: string,
-  incident: { id: number; channelId: string | null; mychampsIncidentId: number | null },
+  incident: {
+    id: number;
+    channelId: string | null;
+    mychampsIncidentId: number | null;
+    defendants?: unknown;
+    defenceSubmitted?: unknown;
+  },
   payload: { verdict: string; verdictDescription: string; penaltyValue?: string },
 ): Promise<string | null> {
   let warning: string | null = null;
@@ -1068,21 +1078,18 @@ async function closeIncident(
     });
 
     const ticketAccessRoleIds = await getTicketAccessRoleIds(guildId);
-    const targets = new Set([
+    const targets = getIncidentClosePermissionTargets(
+      channel,
       channel.guild.roles.everyone.id,
-      ...Array.from(channel.permissionOverwrites.cache.keys()),
-      ...ticketAccessRoleIds,
-    ]);
+      ticketAccessRoleIds,
+      incident,
+    );
 
     for (const targetId of targets) {
       await channel.permissionOverwrites
         .edit(targetId, {
           ViewChannel: true,
-          SendMessages: false,
-          SendMessagesInThreads: false,
-          CreatePublicThreads: false,
-          CreatePrivateThreads: false,
-          AddReactions: false,
+          ...INCIDENT_CHANNEL_LOCK_PERMISSIONS,
         })
         .catch((error) => {
           warning = error instanceof Error ? error.message : 'Could not lock incident channel.';
