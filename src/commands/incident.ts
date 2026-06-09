@@ -27,6 +27,10 @@ import { BotCommand } from '../types';
 import { prisma } from '../database';
 import { ChampionshipSummary, MyChampsApiClient } from '../services/myChampsApiClient';
 import { getTicketAccessRoleIds } from '../utils/incidentSettings';
+import {
+  getIncidentClosePermissionTargets,
+  INCIDENT_CHANNEL_LOCK_PERMISSIONS,
+} from '../utils/incidentPermissions';
 import { formatMyChampsConfigError, formatUserError } from '../utils/errors';
 
 interface IncidentButtonColorOption {
@@ -47,14 +51,6 @@ const DEFAULT_BUTTON_MESSAGE =
   'Click the button below to report an incident. You will be asked to provide details.';
 const NFA_VERDICT_COLOR = 0x2ecc71;
 const ACTION_VERDICT_COLOR = 0xe74c3c;
-const INCIDENT_CHANNEL_LOCK_PERMISSIONS = {
-  SendMessages: false,
-  SendMessagesInThreads: false,
-  CreatePublicThreads: false,
-  CreatePrivateThreads: false,
-  AddReactions: false,
-} as const;
-
 const SETUP_FIELD_IDS = {
   championship: 'incident_setup_championship',
   buttonLabel: 'incident_setup_button_label',
@@ -806,6 +802,7 @@ async function handleClose(
         channel as TextChannel,
         interaction.guild!.roles.everyone.id,
         ticketAccessRoleIds,
+        incident,
       )) {
         await channel.permissionOverwrites.edit(targetId, {
           ViewChannel: true,
@@ -832,20 +829,4 @@ async function handleClose(
 
 function getVerdictColor(verdictType: string): number {
   return verdictType === 'NFA' ? NFA_VERDICT_COLOR : ACTION_VERDICT_COLOR;
-}
-
-function uniqueIds(ids: string[]): string[] {
-  return Array.from(new Set(ids.filter(Boolean)));
-}
-
-function getIncidentClosePermissionTargets(
-  channel: TextChannel,
-  everyoneRoleId: string,
-  ticketAccessRoleIds: string[],
-): string[] {
-  return uniqueIds([
-    everyoneRoleId,
-    ...Array.from(channel.permissionOverwrites.cache?.keys() ?? []),
-    ...ticketAccessRoleIds,
-  ]);
 }

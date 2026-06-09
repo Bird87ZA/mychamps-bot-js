@@ -552,9 +552,9 @@ describe('incidentCommand', () => {
         channelId: '987654321',
         mychampsIncidentId: null,
         championshipSlug: 'champ-a',
-        defendants: ['Driver A'],
+        defendants: ['driver-user-a', 'driver-user-b', 'Driver A'],
         status: 'awaiting_review',
-        defenceSubmitted: [],
+        defenceSubmitted: ['driver-user-b'],
         lastReminderAt: null,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -586,6 +586,14 @@ describe('incidentCommand', () => {
       expect(mockChannel.permissionOverwrites.edit).toHaveBeenCalledWith(
         'driver-user-a',
         expect.objectContaining({ ViewChannel: true, SendMessages: false }),
+      );
+      expect(mockChannel.permissionOverwrites.edit).toHaveBeenCalledWith(
+        'driver-user-b',
+        expect.objectContaining({ ViewChannel: true, SendMessages: false }),
+      );
+      expect(mockChannel.permissionOverwrites.edit).not.toHaveBeenCalledWith(
+        'Driver A',
+        expect.anything(),
       );
       expect(mockChannel.permissionOverwrites.edit).toHaveBeenCalledWith(
         'ticket-role-a',

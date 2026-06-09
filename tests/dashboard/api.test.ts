@@ -169,6 +169,78 @@ describe('Dashboard API', () => {
       skipDuplicates: true,
     });
   });
+
+  it('restores read-only ticket access for removed defendants when closing from the dashboard', async () => {
+    const permissionEdit = vi.fn().mockResolvedValue({});
+    const channel = {
+      type: 0,
+      guild: { roles: { everyone: { id: 'everyone-id' } } },
+      send: vi.fn().mockResolvedValue({}),
+      permissionOverwrites: {
+        cache: new Map([['driver-user-a', {}]]),
+        edit: permissionEdit,
+      },
+    };
+    const client = {
+      isReady: vi.fn(() => true),
+      guilds: {
+        cache: new Map([['123', { id: '123' }]]),
+        fetch: vi.fn(),
+      },
+      channels: {
+        fetch: vi.fn(async () => channel),
+      },
+    };
+
+    mockPrisma.incident.findFirst.mockResolvedValue({
+      id: 10,
+      guildId: '123',
+      channelId: '987',
+      mychampsIncidentId: null,
+      championshipSlug: 'champ-a',
+      defendants: ['driver-user-a', 'driver-user-b', 'Driver A'],
+      status: 'awaiting_review',
+      defenceSubmitted: ['driver-user-b'],
+      lastReminderAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    mockPrisma.incident.update.mockResolvedValue({} as never);
+    mockPrisma.setting.findFirst.mockImplementation(async (args: { where: { key: string } }) => {
+      if (args.where.key === 'ticket-access-roles') {
+        return setting('ticket-access-roles', '["ticket-role-a"]');
+      }
+
+      return null;
+    });
+
+    const res = await request(createApp(authenticatedSession(), client))
+      .post('/api/servers/123/incidents/10/close')
+      .send({ verdict: 'NFA', verdictDescription: 'No action taken.' });
+
+    expect(res.status).toBe(200);
+    expect(permissionEdit).toHaveBeenCalledWith(
+      'everyone-id',
+      expect.objectContaining({ ViewChannel: true, SendMessages: false }),
+    );
+    expect(permissionEdit).toHaveBeenCalledWith(
+      'driver-user-a',
+      expect.objectContaining({ ViewChannel: true, SendMessages: false }),
+    );
+    expect(permissionEdit).toHaveBeenCalledWith(
+      'driver-user-b',
+      expect.objectContaining({ ViewChannel: true, SendMessages: false }),
+    );
+    expect(permissionEdit).toHaveBeenCalledWith(
+      'ticket-role-a',
+      expect.objectContaining({ ViewChannel: true, SendMessages: false }),
+    );
+    expect(permissionEdit).not.toHaveBeenCalledWith('Driver A', expect.anything());
+    expect(mockPrisma.incident.update).toHaveBeenCalledWith({
+      where: { id: 10 },
+      data: { status: 'closed' },
+    });
+  });
 });
 
 function createApp(session: Record<string, unknown> = {}, client?: unknown) {
