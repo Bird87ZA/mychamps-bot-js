@@ -8,6 +8,7 @@ vi.mock('../../src/services/myChampsApiClient', () => ({
   MyChampsApiClient: {
     fromGuild: vi.fn(async () => ({
       getManagedStatsLeagues: vi.fn(async () => []),
+      getChampionships: vi.fn(async () => []),
       submitVerdict: vi.fn(),
     })),
   },

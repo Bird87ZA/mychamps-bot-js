@@ -154,15 +154,24 @@ export function createApiRouter(context: Partial<DashboardContext> = {}): Router
       const scheduleMap = new Map(schedules.map((schedule) => [schedule.id.toString(), schedule]));
       const guildReminders = reminders.filter((reminder) => scheduleMap.has(reminder.scheduleId));
       let myChampsLeagues: unknown[] = [];
+      let myChampsChampionships: unknown[] = [];
       const userId = req.session.dashboard?.user?.id;
 
       if (userId) {
         try {
-          myChampsLeagues = await (
-            await MyChampsApiClient.fromGuild(guildId)
-          ).getManagedStatsLeagues(userId);
+          const myChamps = await MyChampsApiClient.fromGuild(guildId);
+          const [leagues, championships] = await Promise.all([
+            myChamps.getManagedStatsLeagues(userId),
+            myChamps.getChampionships(userId),
+          ]);
+          myChampsLeagues = leagues;
+          myChampsChampionships = championships.map((championship) => ({
+            ...championship,
+            label: formatChampionshipLabel(championship),
+          }));
         } catch {
           myChampsLeagues = [];
+          myChampsChampionships = [];
         }
       }
 
@@ -233,6 +242,7 @@ export function createApiRouter(context: Partial<DashboardContext> = {}): Router
             roleName: resolver.roleName(role.roleId),
           })),
           myChampsLeagues,
+          myChampsChampionships,
         }),
       );
     } catch (error) {
@@ -288,6 +298,36 @@ export function createApiRouter(context: Partial<DashboardContext> = {}): Router
       next(error);
     }
   });
+
+  router.post(
+    '/servers/:guildId/attendance-schedules',
+    requireGuildEdit(client),
+    async (req, res, next) => {
+      try {
+        const guildId = guildIdParam(req);
+        const guild = await getGuild(client, guildId);
+        const attendancePayload = attendanceData(guildId, req.body.attendance ?? req.body);
+        const schedulePayload = await scheduleData(
+          guildId,
+          guild?.name ?? req.body.guildName ?? 'Discord Server',
+          {
+            ...(req.body.schedule ?? req.body),
+            channelId: attendancePayload.channelId.toString(),
+          },
+        );
+
+        const [attendance, schedule] = await prisma.$transaction([
+          prisma.attendance.create({ data: attendancePayload }),
+          prisma.schedule.create({ data: schedulePayload }),
+        ]);
+
+        await rebuildReminders(guildId);
+        res.json(serializeBigInts({ attendance, schedule }));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.put(
     '/servers/:guildId/attendance/:id',
@@ -346,12 +386,24 @@ export function createApiRouter(context: Partial<DashboardContext> = {}): Router
       try {
         const guildId = guildIdParam(req);
         const guild = await getGuild(client, guildId);
+        const existing = await prisma.schedule.findUnique({ where: { id: paramId(req) } });
+
+        if (!existing) {
+          res.status(404).json({ error: 'Schedule not found.' });
+          return;
+        }
+
         const updated = await prisma.schedule.update({
-          where: { id: paramId(req) },
+          where: { id: existing.id },
           data: await scheduleData(
             guildId,
             guild?.name ?? req.body.guildName ?? 'Discord Server',
             req.body,
+            {
+              botPosted: existing.botPosted,
+              closed: existing.closed,
+              attendees: existing.attendees,
+            },
           ),
         });
         await rebuildReminders(guildId);
@@ -720,7 +772,12 @@ function attendanceData(guildId: string, body: Record<string, unknown>) {
   };
 }
 
-async function scheduleData(guildId: string, guildName: string, body: Record<string, unknown>) {
+async function scheduleData(
+  guildId: string,
+  guildName: string,
+  body: Record<string, unknown>,
+  defaults: { botPosted?: boolean; closed?: boolean; attendees?: unknown } = {},
+) {
   const name = cleanString(body.name);
   const dateLocal = cleanString(body.dateLocal);
 
@@ -751,10 +808,21 @@ async function scheduleData(guildId: string, guildName: string, body: Record<str
     closingDateUtc: closingDate ? convertToUtc(closingDate, timezone) : null,
     image: cleanString(body.image) || null,
     timeBefore: `-${parseWholeNumber(postTime, 'Post time')}`,
-    botPosted: Boolean(body.botPosted),
-    closed: Boolean(body.closed),
-    attendees: parseRecord(body.attendees) as Prisma.InputJsonValue,
+    botPosted: 'botPosted' in body ? Boolean(body.botPosted) : (defaults.botPosted ?? false),
+    closed: 'closed' in body ? Boolean(body.closed) : (defaults.closed ?? false),
+    attendees: parseRecord(body.attendees ?? defaults.attendees) as Prisma.InputJsonValue,
   };
+}
+
+function formatChampionshipLabel(championship: {
+  name?: string | null;
+  slug?: string | null;
+  team_name?: string | null;
+}) {
+  const championshipName = cleanString(championship.name) || cleanString(championship.slug);
+  const teamName = cleanString(championship.team_name);
+
+  return teamName ? `${teamName} - ${championshipName}` : championshipName;
 }
 
 function reminderData(body: Record<string, unknown>) {

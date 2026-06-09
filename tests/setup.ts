@@ -69,6 +69,7 @@ vi.mock('../src/database', () => ({
       createMany: vi.fn(),
       count: vi.fn(),
     },
+    $transaction: vi.fn((operations: unknown[]) => Promise.all(operations)),
     $queryRaw: vi.fn(),
     $disconnect: vi.fn(),
   },

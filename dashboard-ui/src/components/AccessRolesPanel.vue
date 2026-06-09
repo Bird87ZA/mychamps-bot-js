@@ -55,7 +55,9 @@ async function save(): Promise<void> {
 
       <div>
         <div class="label">Current roles</div>
-        <p class="muted">{{ selectedNames.length ? selectedNames.join(', ') : 'Manage Server only' }}</p>
+        <p class="muted">
+          {{ selectedNames.length ? selectedNames.join(', ') : 'Manage Server only' }}
+        </p>
       </div>
 
       <form v-if="bootstrap.guild.canManage" class="grid" @submit.prevent="save">
@@ -72,7 +74,9 @@ async function save(): Promise<void> {
         </div>
       </form>
 
-      <p v-else class="muted">Only members with Discord Manage Server can change dashboard access.</p>
+      <p v-else class="muted">
+        Only members with Discord Manage Server can change dashboard access.
+      </p>
     </div>
   </section>
 </template>
