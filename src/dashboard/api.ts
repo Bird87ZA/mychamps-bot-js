@@ -165,15 +165,39 @@ export function createApiRouter(context: Partial<DashboardContext> = {}): Router
             myChamps.getChampionships(userId),
           ]);
           myChampsLeagues = leagues;
-          myChampsChampionships = championships.map((championship) => ({
-            ...championship,
-            label: formatChampionshipLabel(championship),
-          }));
+          myChampsChampionships = championships
+            .filter((championship) => !isCompletedChampionship(championship))
+            .map((championship) => ({
+              ...championship,
+              label: formatChampionshipLabel(championship),
+            }));
         } catch {
           myChampsLeagues = [];
           myChampsChampionships = [];
         }
       }
+
+      const incidentDetails = new Map<
+        number,
+        { reportedByName: string; defendantNames: string[]; commentCount: number | null }
+      >();
+
+      await Promise.all(
+        incidents.map(async (incident) => {
+          const defendantIds = parseJsonArray(incident.defendants);
+          const [reportedByName, defendantNames, commentCount] = await Promise.all([
+            resolveMemberDisplayName(guild, incident.reportedByDiscordId),
+            Promise.all(defendantIds.map((id) => resolveMemberDisplayName(guild, id))),
+            countIncidentChannelComments(client, incident.channelId),
+          ]);
+
+          incidentDetails.set(incident.id, {
+            reportedByName,
+            defendantNames,
+            commentCount,
+          });
+        }),
+      );
 
       res.json(
         serializeBigInts({
@@ -233,6 +257,9 @@ export function createApiRouter(context: Partial<DashboardContext> = {}): Router
           incidents: incidents.map((incident) => ({
             ...incident,
             channelName: resolver.channelName(incident.channelId),
+            reportedByName: incidentDetails.get(incident.id)?.reportedByName ?? '-',
+            defendantNames: incidentDetails.get(incident.id)?.defendantNames ?? [],
+            commentCount: incidentDetails.get(incident.id)?.commentCount ?? null,
             stewardRoleNames: parseJsonArray(incident.stewardRoleIds).map((id) =>
               resolver.roleName(id),
             ),
@@ -818,11 +845,41 @@ function formatChampionshipLabel(championship: {
   name?: string | null;
   slug?: string | null;
   team_name?: string | null;
+  teamName?: string | null;
 }) {
   const championshipName = cleanString(championship.name) || cleanString(championship.slug);
-  const teamName = cleanString(championship.team_name);
+  const teamName = cleanString(championship.team_name) || cleanString(championship.teamName);
 
   return teamName ? `${teamName} - ${championshipName}` : championshipName;
+}
+
+function isCompletedChampionship(championship: unknown): boolean {
+  const record = parseRecord(championship);
+  const status = cleanString(record.status).toLowerCase();
+  const completedValues = [
+    record.completed,
+    record.is_completed,
+    record.isCompleted,
+    record.finished,
+    record.archived,
+  ];
+
+  if (
+    completedValues.some((value) => value === true || cleanString(value).toLowerCase() === 'true')
+  ) {
+    return true;
+  }
+
+  if (
+    cleanString(record.completed_at) ||
+    cleanString(record.completedAt) ||
+    cleanString(record.finished_at) ||
+    cleanString(record.finishedAt)
+  ) {
+    return true;
+  }
+
+  return ['completed', 'complete', 'finished', 'archived', 'closed'].includes(status);
 }
 
 function reminderData(body: Record<string, unknown>) {
@@ -941,6 +998,32 @@ async function fetchTextChannel(
   }
 
   return channel as TextChannel;
+}
+
+async function resolveMemberDisplayName(
+  guild: Awaited<ReturnType<typeof getGuild>>,
+  userId: string | null | undefined,
+): Promise<string> {
+  if (!userId || !guild) {
+    return '-';
+  }
+
+  const member = await guild.members.fetch(userId).catch(() => null);
+  return member?.displayName ?? `<@${userId}>`;
+}
+
+async function countIncidentChannelComments(
+  client: Client | undefined,
+  channelId: string | null,
+): Promise<number | null> {
+  const channel = await fetchTextChannel(client, channelId);
+  const messages = await channel?.messages.fetch({ limit: 100 }).catch(() => null);
+
+  if (!messages) {
+    return null;
+  }
+
+  return messages.filter((message) => !message.author.bot).size;
 }
 
 async function closeIncident(

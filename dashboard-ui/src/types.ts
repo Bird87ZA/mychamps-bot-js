@@ -34,6 +34,12 @@ export interface MyChampsChampionshipOption extends DiscordOption {
   slug: string;
   teamId?: number;
   teamName?: string;
+  completed?: boolean;
+  is_completed?: boolean;
+  isCompleted?: boolean;
+  status?: string;
+  completed_at?: string | null;
+  completedAt?: string | null;
   label: string;
 }
 
@@ -81,7 +87,15 @@ export interface FieldOption {
 export interface FieldConfig {
   key: string;
   label: string;
-  type: 'text' | 'textarea' | 'number' | 'checkbox' | 'select' | 'multiselect' | 'datetime';
+  type:
+    | 'text'
+    | 'textarea'
+    | 'number'
+    | 'checkbox'
+    | 'select'
+    | 'multiselect'
+    | 'datetime'
+    | 'channel-select';
   options?: FieldOption[];
   sourceKey?: string;
   placeholder?: string;

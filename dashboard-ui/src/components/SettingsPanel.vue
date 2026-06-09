@@ -15,9 +15,6 @@ const error = shallowRef('');
 const saving = shallowRef(false);
 const form = reactive({
   timezone: '',
-  postTime: '',
-  remindAttendees: '',
-  incidentReminderInterval: '',
   myChampsApiToken: '',
   ticketAccessRoles: [] as string[],
   statsLeagueIds: [] as string[],
@@ -28,9 +25,6 @@ watch(
   () => {
     const map = new Map(props.bootstrap.settings.map((setting) => [setting.key, setting]));
     form.timezone = map.get('timezone')?.value ?? '';
-    form.postTime = map.get('post-time')?.value ?? '';
-    form.remindAttendees = map.get('remind-attendees')?.value ?? '';
-    form.incidentReminderInterval = map.get('incident-reminder-interval')?.value ?? '';
     form.myChampsApiToken = map.get('mychamps-api-token')?.value ?? '';
     form.ticketAccessRoles = parseArraySetting(map.get('ticket-access-roles')?.value);
     form.statsLeagueIds = (map.get('stats-league-ids')?.parsedValue ?? []).map(String);
@@ -49,9 +43,6 @@ async function save(): Promise<void> {
       body: JSON.stringify({
         settings: {
           timezone: form.timezone,
-          'post-time': form.postTime,
-          'remind-attendees': form.remindAttendees,
-          'incident-reminder-interval': form.incidentReminderInterval,
           'mychamps-api-token': form.myChampsApiToken,
           'ticket-access-roles': form.ticketAccessRoles,
           'stats-league-ids': form.statsLeagueIds,
@@ -154,60 +145,6 @@ function parseArraySetting(value: string | undefined): string[] {
               </option>
             </select>
           </label>
-        </div>
-      </section>
-
-      <section class="panel settings-card">
-        <div class="panel-header">
-          <h3 class="panel-title">Attendance</h3>
-        </div>
-        <div class="panel-body form-grid">
-          <label class="field">
-            <span class="label-row">
-              <span class="label">Post time days before</span>
-              <HelpTooltip
-                text="Default number of days before a round that the attendance message should be posted."
-              />
-            </span>
-            <input v-model="form.postTime" class="input" type="number" min="0" />
-          </label>
-
-          <label class="field">
-            <span class="label-row">
-              <span class="label">Attendee reminder hours</span>
-              <HelpTooltip
-                text="How often the bot reminds users who have not selected attendance. Use 0 or leave blank to disable reminders."
-              />
-            </span>
-            <input v-model="form.remindAttendees" class="input" type="number" min="0" />
-          </label>
-        </div>
-      </section>
-
-      <section class="panel settings-card">
-        <div class="panel-header">
-          <h3 class="panel-title">Incident Buttons</h3>
-        </div>
-        <div class="panel-body form-grid">
-          <label class="field">
-            <span class="label-row">
-              <span class="label">Incident reminder hours</span>
-              <HelpTooltip
-                text="How often stewards are reminded about open incident tickets. Use 0 or leave blank to disable these reminders."
-              />
-            </span>
-            <input v-model="form.incidentReminderInterval" class="input" type="number" min="0" />
-          </label>
-
-          <div class="field full">
-            <span class="label-row">
-              <span class="label">Incident categories</span>
-              <HelpTooltip
-                text="Incident categories are configured per incident button below, so each button can create tickets in its own category."
-              />
-            </span>
-            <p class="muted compact-copy">Set the incident category on each incident button.</p>
-          </div>
         </div>
       </section>
     </div>

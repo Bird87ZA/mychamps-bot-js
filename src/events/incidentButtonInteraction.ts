@@ -252,6 +252,7 @@ export async function handleIncidentButtonInteraction(
       incidentNumber,
       mychampsIncidentId: apiIncidentId,
       championshipSlug: incidentButton.championshipSlug,
+      reportedByDiscordId: interaction.user.id,
       defendants: defendants,
       stewardRoleIds: configuredStewardRoleIds,
       status: 'open',

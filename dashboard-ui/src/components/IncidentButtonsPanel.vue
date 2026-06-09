@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef } from 'vue';
+import { computed, reactive, shallowRef, watch } from 'vue';
 import { deleteRecord, saveRecord, apiRequest } from '../api';
 import { displayValue, formatDate, recordValue } from '../format';
 import GroupedChannelSelect from './GroupedChannelSelect.vue';
@@ -12,6 +12,9 @@ const emit = defineEmits<{ refresh: [] }>();
 const status = shallowRef('');
 const error = shallowRef('');
 const saving = shallowRef(false);
+const settingsStatus = shallowRef('');
+const settingsError = shallowRef('');
+const savingSettings = shallowRef(false);
 const editingButtonId = shallowRef<number | null>(null);
 const expandedButtonIds = shallowRef(new Set<number>());
 const selectedIncident = shallowRef<DashboardRecord | null>(null);
@@ -32,8 +35,16 @@ const form = reactive({
   buttonMessage:
     'Click the button below to report an incident. You will be asked to provide details.',
 });
+const incidentSettingsForm = reactive({
+  incidentReminderInterval: '',
+});
 
 const colorOptions = ['Blue', 'Grey', 'Green', 'Red', 'Purple', 'Orange', 'Yellow', 'Teal', 'Pink'];
+const activeChampionships = computed(() =>
+  props.bootstrap.myChampsChampionships.filter(
+    (championship) => !isChampionshipCompleted(championship),
+  ),
+);
 const incidentsByChampionship = computed(() => {
   const map = new Map<string, DashboardRecord[]>();
 
@@ -44,6 +55,37 @@ const incidentsByChampionship = computed(() => {
 
   return map;
 });
+
+watch(
+  () => props.bootstrap.settings,
+  () => {
+    incidentSettingsForm.incidentReminderInterval = settingValue('incident-reminder-interval');
+  },
+  { immediate: true },
+);
+
+async function saveIncidentSettings(): Promise<void> {
+  savingSettings.value = true;
+  settingsStatus.value = '';
+  settingsError.value = '';
+
+  try {
+    await apiRequest(`/servers/${props.bootstrap.guild.id}/settings`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        settings: {
+          'incident-reminder-interval': incidentSettingsForm.incidentReminderInterval,
+        },
+      }),
+    });
+    settingsStatus.value = 'Incident settings saved.';
+    emit('refresh');
+  } catch (caught) {
+    settingsError.value = caught instanceof Error ? caught.message : String(caught);
+  } finally {
+    savingSettings.value = false;
+  }
+}
 
 function resetForm(): void {
   editingButtonId.value = null;
@@ -97,8 +139,8 @@ async function submit(): Promise<void> {
       editingButtonId.value ?? undefined,
     );
     status.value = editingButtonId.value
-      ? 'Incident button updated.'
-      : 'Incident button posted to Discord.';
+      ? 'Incident setup updated.'
+      : 'Incident setup posted to Discord.';
     resetForm();
     emit('refresh');
   } catch (caught) {
@@ -164,6 +206,19 @@ function incidentsForButton(button: DashboardRecord): DashboardRecord[] {
   return incidentsByChampionship.value.get(stringValue(button, 'championshipSlug')) ?? [];
 }
 
+function incidentDefendants(incident: DashboardRecord): string {
+  const names = Array.isArray(incident.defendantNames)
+    ? incident.defendantNames.map(String).filter(Boolean)
+    : parseArray(incident.defendants);
+
+  return names.length > 0 ? names.join(', ') : '-';
+}
+
+function incidentCommentCount(incident: DashboardRecord): string {
+  const value = recordValue(incident, 'commentCount');
+  return typeof value === 'number' ? String(value) : '-';
+}
+
 function toggleButton(id: number): void {
   const next = new Set(expandedButtonIds.value);
   next.has(id) ? next.delete(id) : next.add(id);
@@ -183,15 +238,77 @@ function stringValue(record: DashboardRecord, key: string): string {
   return value == null ? '' : String(value);
 }
 
+function settingValue(key: string): string {
+  return props.bootstrap.settings.find((setting) => setting.key === key)?.value ?? '';
+}
+
+function isChampionshipCompleted(championship: unknown): boolean {
+  const record = championship as Record<string, unknown>;
+  const status = String(record.status ?? '').toLowerCase();
+  const completedFlags = [record.completed, record.is_completed, record.isCompleted];
+
+  return (
+    completedFlags.some((value) => value === true || String(value).toLowerCase() === 'true') ||
+    Boolean(
+      record.completed_at ||
+      record.completedAt ||
+      ['completed', 'complete', 'finished', 'archived', 'closed'].includes(status),
+    )
+  );
+}
+
 resetForm();
 </script>
 
 <template>
   <section class="grid">
+    <form v-if="bootstrap.guild.canEdit" class="panel" @submit.prevent="saveIncidentSettings">
+      <div class="panel-header">
+        <h2 class="panel-title">Incident Settings</h2>
+      </div>
+      <div class="panel-body grid">
+        <div v-if="settingsStatus" class="status">{{ settingsStatus }}</div>
+        <div v-if="settingsError" class="error">{{ settingsError }}</div>
+
+        <div class="form-grid">
+          <label class="field">
+            <span class="label-row">
+              <span class="label">Incident reminder hours</span>
+              <HelpTooltip
+                text="How often stewards are reminded about open incident tickets. Use 0 or leave blank to disable these reminders."
+              />
+            </span>
+            <input
+              v-model="incidentSettingsForm.incidentReminderInterval"
+              class="input"
+              type="number"
+              min="0"
+            />
+          </label>
+
+          <div class="field full">
+            <span class="label-row">
+              <span class="label">Incident categories</span>
+              <HelpTooltip
+                text="Incident categories are configured per incident setup, so each Discord button can create tickets in its own category."
+              />
+            </span>
+            <p class="muted compact-copy">Set the incident category on each incident setup.</p>
+          </div>
+        </div>
+
+        <div>
+          <button class="button" type="submit" :disabled="savingSettings">
+            Save incident settings
+          </button>
+        </div>
+      </div>
+    </form>
+
     <form v-if="bootstrap.guild.canEdit" class="panel" @submit.prevent="submit">
       <div class="panel-header">
         <h2 class="panel-title">
-          {{ editingButtonId ? 'Edit Incident Button' : 'New Incident Button' }}
+          {{ editingButtonId ? 'Edit Incident Setup' : 'New Incident Setup' }}
         </h2>
         <button v-if="editingButtonId" class="button secondary" type="button" @click="resetForm">
           Cancel
@@ -222,7 +339,7 @@ resetForm();
             <select v-model="form.championshipSlug" class="select" required>
               <option value="">Select championship...</option>
               <option
-                v-for="championship in bootstrap.myChampsChampionships"
+                v-for="championship in activeChampionships"
                 :key="championship.slug"
                 :value="championship.slug"
               >
@@ -301,7 +418,7 @@ resetForm();
 
         <div>
           <button class="button" type="submit" :disabled="saving">
-            {{ editingButtonId ? 'Save incident button' : 'Create incident button' }}
+            {{ editingButtonId ? 'Save incident setup' : 'Create incident setup' }}
           </button>
         </div>
       </div>
@@ -339,7 +456,7 @@ resetForm();
 
     <section class="panel">
       <div class="panel-header">
-        <h2 class="panel-title">Incident Buttons</h2>
+        <h2 class="panel-title">Incidents</h2>
         <span class="badge">{{ bootstrap.incidentButtons.length }}</span>
       </div>
 
@@ -370,7 +487,7 @@ resetForm();
                 type="button"
                 @click="editButton(button)"
               >
-                Edit button
+                Edit setup
               </button>
               <button
                 v-if="bootstrap.guild.canEdit"
@@ -378,7 +495,7 @@ resetForm();
                 type="button"
                 @click="removeButton(button)"
               >
-                Delete button
+                Delete setup
               </button>
             </div>
 
@@ -396,6 +513,11 @@ resetForm();
                   <strong>{{ displayValue(incident.incidentNumber ?? incident.id) }}</strong>
                   <div class="muted">
                     {{ formatDate(incident.createdAt) }} · {{ displayValue(incident.channelName) }}
+                  </div>
+                  <div class="incident-meta">
+                    <span>Reported by: {{ displayValue(incident.reportedByName) }}</span>
+                    <span>Reported against: {{ incidentDefendants(incident) }}</span>
+                    <span>Comments: {{ incidentCommentCount(incident) }}</span>
                   </div>
                 </div>
                 <div class="actions">

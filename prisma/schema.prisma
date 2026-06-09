@@ -137,19 +137,20 @@ model IncidentButton {
 }
 
 model Incident {
-  id                 Int       @id @default(autoincrement())
-  incidentNumber     Int?      @map("incident_number")
-  guildId            String    @map("guild_id")
-  channelId          String?   @map("channel_id")
-  mychampsIncidentId Int?      @map("mychamps_incident_id")
-  championshipSlug   String    @map("championship_slug")
-  defendants         Json      @db.Json
-  stewardRoleIds     Json      @default("[]") @map("steward_role_ids") @db.Json
-  status             String    @default("open")
-  defenceSubmitted   Json      @default("[]") @map("defence_submitted") @db.Json
-  lastReminderAt     DateTime? @map("last_reminder_at")
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
+  id                  Int       @id @default(autoincrement())
+  incidentNumber      Int?      @map("incident_number")
+  guildId             String    @map("guild_id")
+  channelId           String?   @map("channel_id")
+  mychampsIncidentId  Int?      @map("mychamps_incident_id")
+  championshipSlug    String    @map("championship_slug")
+  reportedByDiscordId String?   @map("reported_by_discord_id")
+  defendants          Json      @db.Json
+  stewardRoleIds      Json      @default("[]") @map("steward_role_ids") @db.Json
+  status              String    @default("open")
+  defenceSubmitted    Json      @default("[]") @map("defence_submitted") @db.Json
+  lastReminderAt      DateTime? @map("last_reminder_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
 
   @@map("incidents")
 }
