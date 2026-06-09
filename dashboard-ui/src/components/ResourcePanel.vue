@@ -2,7 +2,8 @@
 import { computed, reactive, shallowRef } from 'vue';
 import { deleteRecord, saveRecord } from '../api';
 import { displayValue, formatDate, recordValue, toDatetimeInput } from '../format';
-import type { DashboardRecord, FieldConfig } from '../types';
+import GroupedChannelSelect from './GroupedChannelSelect.vue';
+import type { DashboardBootstrap, DashboardRecord, FieldConfig } from '../types';
 
 const props = defineProps<{
   guildId: string;
@@ -13,6 +14,7 @@ const props = defineProps<{
   columns: Array<{ key: string; label: string; format?: 'date' }>;
   canEdit: boolean;
   emptyText: string;
+  metadata?: DashboardBootstrap['metadata'];
 }>();
 
 const emit = defineEmits<{ refresh: [] }>();
@@ -132,6 +134,13 @@ resetForm();
                 {{ option.label }}
               </option>
             </select>
+            <GroupedChannelSelect
+              v-else-if="field.type === 'channel-select'"
+              v-model="form[field.key]"
+              :channels="metadata?.textChannels ?? []"
+              :categories="metadata?.categories ?? []"
+              :required="field.required"
+            />
             <select
               v-else-if="field.type === 'multiselect'"
               v-model="form[field.key]"

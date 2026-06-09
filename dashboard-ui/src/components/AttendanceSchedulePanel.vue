@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef } from 'vue';
-import { createAttendanceSchedule, deleteRecord, saveRecord } from '../api';
+import { computed, reactive, ref, shallowRef, watch } from 'vue';
+import { apiRequest, createAttendanceSchedule, deleteRecord, saveRecord } from '../api';
 import { displayValue, formatDate, recordValue, toDatetimeInput } from '../format';
 import GroupedChannelSelect from './GroupedChannelSelect.vue';
 import HelpTooltip from './HelpTooltip.vue';
@@ -13,10 +13,24 @@ const emit = defineEmits<{ refresh: [] }>();
 const status = shallowRef('');
 const error = shallowRef('');
 const saving = shallowRef(false);
+const settingsStatus = shallowRef('');
+const settingsError = shallowRef('');
+const savingSettings = shallowRef(false);
 const editingAttendanceId = shallowRef<number | null>(null);
-const editingScheduleId = shallowRef<number | null>(null);
 const expandedAttendanceIds = shallowRef(new Set<number>());
 const expandedScheduleIds = shallowRef(new Set<number>());
+let scheduleFormCounter = 0;
+
+interface ScheduleDraft {
+  key: string;
+  attendanceId: number;
+  editingScheduleId: number | null;
+  name: string;
+  dateLocal: string;
+  closingDateLocal: string;
+  image: string;
+  postTimeDaysBefore: string;
+}
 
 const attendanceForm = reactive({
   channelId: '',
@@ -27,16 +41,21 @@ const attendanceForm = reactive({
   includeReserveGroup: true,
   includeCommentatorGroup: true,
 });
+const attendanceSettingsForm = reactive({
+  postTime: '',
+  remindAttendees: '',
+});
 const scheduleForm = reactive({
-  attendanceId: null as number | null,
   name: '',
   dateLocal: '',
   closingDateLocal: '',
   image: '',
   postTimeDaysBefore: '',
 });
+const scheduleDrafts = ref<ScheduleDraft[]>([]);
 
 const defaultPostTime = computed(() => settingValue('post-time') || '6');
+const roleNames = computed(() => props.bootstrap.metadata.roles.map((role) => role.name));
 const excludedAttendanceChannelIds = computed(() => {
   const excluded = new Set(
     props.bootstrap.attendance
@@ -80,17 +99,52 @@ function resetAttendanceForm(): void {
   attendanceForm.groups = [];
   attendanceForm.includeReserveGroup = true;
   attendanceForm.includeCommentatorGroup = true;
-  resetScheduleForm();
+  resetInitialScheduleForm();
 }
 
-function resetScheduleForm(): void {
-  editingScheduleId.value = null;
-  scheduleForm.attendanceId = null;
+function resetInitialScheduleForm(): void {
   scheduleForm.name = '';
   scheduleForm.dateLocal = '';
   scheduleForm.closingDateLocal = '';
   scheduleForm.image = '';
   scheduleForm.postTimeDaysBefore = defaultPostTime.value;
+}
+
+watch(
+  () => props.bootstrap.settings,
+  () => {
+    attendanceSettingsForm.postTime = settingValue('post-time') || '6';
+    attendanceSettingsForm.remindAttendees = settingValue('remind-attendees');
+
+    if (!scheduleForm.postTimeDaysBefore) {
+      scheduleForm.postTimeDaysBefore = attendanceSettingsForm.postTime;
+    }
+  },
+  { immediate: true },
+);
+
+async function saveAttendanceSettings(): Promise<void> {
+  savingSettings.value = true;
+  settingsStatus.value = '';
+  settingsError.value = '';
+
+  try {
+    await apiRequest(`/servers/${props.bootstrap.guild.id}/settings`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        settings: {
+          'post-time': attendanceSettingsForm.postTime,
+          'remind-attendees': attendanceSettingsForm.remindAttendees,
+        },
+      }),
+    });
+    settingsStatus.value = 'Attendance settings saved.';
+    emit('refresh');
+  } catch (caught) {
+    settingsError.value = caught instanceof Error ? caught.message : String(caught);
+  } finally {
+    savingSettings.value = false;
+  }
 }
 
 function editAttendance(attendance: DashboardRecord): void {
@@ -175,27 +229,25 @@ async function removeAttendance(attendance: DashboardRecord): Promise<void> {
 }
 
 function startAddSchedule(attendance: DashboardRecord): void {
-  editingScheduleId.value = null;
-  scheduleForm.attendanceId = attendance.id;
-  scheduleForm.name = '';
-  scheduleForm.dateLocal = '';
-  scheduleForm.closingDateLocal = '';
-  scheduleForm.image = '';
-  scheduleForm.postTimeDaysBefore = defaultPostTime.value;
+  scheduleDrafts.value = [...scheduleDrafts.value, createScheduleDraft(attendance.id)];
 }
 
 function startEditSchedule(attendance: DashboardRecord, schedule: DashboardRecord): void {
-  editingScheduleId.value = schedule.id;
-  scheduleForm.attendanceId = attendance.id;
-  scheduleForm.name = stringValue(schedule, 'name');
-  scheduleForm.dateLocal = toDatetimeInput(recordValue(schedule, 'date'));
-  scheduleForm.closingDateLocal = toDatetimeInput(recordValue(schedule, 'closingDate'));
-  scheduleForm.image = stringValue(schedule, 'image');
-  scheduleForm.postTimeDaysBefore =
-    stringValue(schedule, 'postTimeDaysBefore') || defaultPostTime.value;
+  scheduleDrafts.value = [
+    ...scheduleDrafts.value,
+    {
+      ...createScheduleDraft(attendance.id),
+      editingScheduleId: schedule.id,
+      name: stringValue(schedule, 'name'),
+      dateLocal: toDatetimeInput(recordValue(schedule, 'date')),
+      closingDateLocal: toDatetimeInput(recordValue(schedule, 'closingDate')),
+      image: stringValue(schedule, 'image'),
+      postTimeDaysBefore: stringValue(schedule, 'postTimeDaysBefore') || defaultPostTime.value,
+    },
+  ];
 }
 
-async function submitSchedule(attendance: DashboardRecord): Promise<void> {
+async function submitSchedule(attendance: DashboardRecord, draft: ScheduleDraft): Promise<void> {
   saving.value = true;
   status.value = '';
   error.value = '';
@@ -205,17 +257,17 @@ async function submitSchedule(attendance: DashboardRecord): Promise<void> {
       props.bootstrap.guild.id,
       'schedules',
       {
-        name: scheduleForm.name,
+        name: draft.name,
         channelId: stringValue(attendance, 'channelId'),
-        dateLocal: scheduleForm.dateLocal,
-        closingDateLocal: scheduleForm.closingDateLocal,
-        image: scheduleForm.image,
-        postTimeDaysBefore: scheduleForm.postTimeDaysBefore || defaultPostTime.value,
+        dateLocal: draft.dateLocal,
+        closingDateLocal: draft.closingDateLocal,
+        image: draft.image,
+        postTimeDaysBefore: draft.postTimeDaysBefore || defaultPostTime.value,
       },
-      editingScheduleId.value ?? undefined,
+      draft.editingScheduleId ?? undefined,
     );
-    status.value = editingScheduleId.value ? 'Round updated.' : 'Round added.';
-    resetScheduleForm();
+    status.value = draft.editingScheduleId ? 'Round updated.' : 'Round added.';
+    removeScheduleDraft(draft.key);
     emit('refresh');
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : String(caught);
@@ -248,8 +300,31 @@ function linkedSchedules(attendance: DashboardRecord): DashboardRecord[] {
   return schedulesByChannel.value.get(stringValue(attendance, 'channelId')) ?? [];
 }
 
+function scheduleFormsFor(attendance: DashboardRecord): ScheduleDraft[] {
+  return scheduleDrafts.value.filter((draft) => draft.attendanceId === attendance.id);
+}
+
 function linkedReminders(schedule: DashboardRecord): DashboardRecord[] {
   return remindersBySchedule.value.get(String(schedule.id)) ?? [];
+}
+
+function createScheduleDraft(attendanceId: number): ScheduleDraft {
+  scheduleFormCounter += 1;
+
+  return {
+    key: `${attendanceId}-${scheduleFormCounter}`,
+    attendanceId,
+    editingScheduleId: null,
+    name: '',
+    dateLocal: '',
+    closingDateLocal: '',
+    image: '',
+    postTimeDaysBefore: defaultPostTime.value,
+  };
+}
+
+function removeScheduleDraft(key: string): void {
+  scheduleDrafts.value = scheduleDrafts.value.filter((draft) => draft.key !== key);
 }
 
 function toggleAttendance(id: number): void {
@@ -286,11 +361,68 @@ function hasAttendeeGroup(attendance: DashboardRecord, group: string): boolean {
   return Boolean(attendees && typeof attendees === 'object' && group in attendees);
 }
 
+function channelDisplayName(channelId: unknown, fallback: unknown): string {
+  const id = channelId == null ? '' : String(channelId);
+  const channel = props.bootstrap.metadata.textChannels.find((item) => item.id === id);
+  const category = channel?.parentId
+    ? props.bootstrap.metadata.categories.find((item) => item.id === channel.parentId)
+    : null;
+
+  if (channel && category) {
+    return `${category.name} - ${channel.name}`;
+  }
+
+  return channel?.name ?? displayValue(fallback);
+}
+
 resetAttendanceForm();
 </script>
 
 <template>
   <section class="grid">
+    <form v-if="bootstrap.guild.canEdit" class="panel" @submit.prevent="saveAttendanceSettings">
+      <div class="panel-header">
+        <h2 class="panel-title">Attendance Settings</h2>
+      </div>
+      <div class="panel-body grid">
+        <div v-if="settingsStatus" class="status">{{ settingsStatus }}</div>
+        <div v-if="settingsError" class="error">{{ settingsError }}</div>
+
+        <div class="form-grid">
+          <label class="field">
+            <span class="label-row">
+              <span class="label">Post time days before</span>
+              <HelpTooltip
+                text="Default number of days before a round that the attendance message should be posted."
+              />
+            </span>
+            <input v-model="attendanceSettingsForm.postTime" class="input" type="number" min="0" />
+          </label>
+
+          <label class="field">
+            <span class="label-row">
+              <span class="label">Attendee reminder hours</span>
+              <HelpTooltip
+                text="How often the bot reminds users who have not selected attendance. Use 0 or leave blank to disable reminders."
+              />
+            </span>
+            <input
+              v-model="attendanceSettingsForm.remindAttendees"
+              class="input"
+              type="number"
+              min="0"
+            />
+          </label>
+        </div>
+
+        <div>
+          <button class="button" type="submit" :disabled="savingSettings">
+            Save attendance settings
+          </button>
+        </div>
+      </div>
+    </form>
+
     <form v-if="bootstrap.guild.canEdit" class="panel" @submit.prevent="submitAttendance">
       <div class="panel-header">
         <h2 class="panel-title">
@@ -355,6 +487,7 @@ resetAttendanceForm();
             <span class="label">Attendance groups</span>
             <TagInput
               v-model="attendanceForm.groups"
+              :options="roleNames"
               placeholder="Type a group name and press Enter"
             />
           </label>
@@ -449,7 +582,9 @@ resetAttendanceForm();
         >
           <button class="record-summary" type="button" @click="toggleAttendance(attendance.id)">
             <span>
-              <strong>{{ displayValue(attendance.channelName) }}</strong>
+              <strong>{{
+                channelDisplayName(attendance.channelId, attendance.channelName)
+              }}</strong>
               <span class="muted">Full-time: {{ displayValue(attendance.fullTimeRoleName) }}</span>
             </span>
             <span class="badge">{{ linkedSchedules(attendance).length }} rounds</span>
@@ -484,51 +619,42 @@ resetAttendanceForm();
             </div>
 
             <form
-              v-if="scheduleForm.attendanceId === attendance.id"
+              v-for="draft in scheduleFormsFor(attendance)"
+              :key="draft.key"
               class="nested-form"
-              @submit.prevent="submitSchedule(attendance)"
+              @submit.prevent="submitSchedule(attendance, draft)"
             >
               <div class="form-grid">
                 <label class="field">
                   <span class="label">Round Name</span>
-                  <input v-model="scheduleForm.name" class="input" required />
+                  <input v-model="draft.name" class="input" required />
                 </label>
                 <label class="field">
                   <span class="label">Event date</span>
-                  <input
-                    v-model="scheduleForm.dateLocal"
-                    class="input"
-                    type="datetime-local"
-                    required
-                  />
+                  <input v-model="draft.dateLocal" class="input" type="datetime-local" required />
                 </label>
                 <label class="field">
                   <span class="label">Closing date</span>
-                  <input
-                    v-model="scheduleForm.closingDateLocal"
-                    class="input"
-                    type="datetime-local"
-                  />
+                  <input v-model="draft.closingDateLocal" class="input" type="datetime-local" />
                 </label>
                 <label class="field">
                   <span class="label">Post days before</span>
-                  <input
-                    v-model="scheduleForm.postTimeDaysBefore"
-                    class="input"
-                    type="number"
-                    min="0"
-                  />
+                  <input v-model="draft.postTimeDaysBefore" class="input" type="number" min="0" />
                 </label>
                 <label class="field full">
                   <span class="label">Image URL</span>
-                  <input v-model="scheduleForm.image" class="input" />
+                  <input v-model="draft.image" class="input" />
                 </label>
               </div>
               <div class="actions">
                 <button class="button" type="submit" :disabled="saving">
-                  {{ editingScheduleId ? 'Save round' : 'Add round' }}
+                  {{ draft.editingScheduleId ? 'Save round' : 'Add round' }}
                 </button>
-                <button class="button secondary" type="button" @click="resetScheduleForm">
+                <button
+                  class="button secondary"
+                  type="button"
+                  @click="removeScheduleDraft(draft.key)"
+                >
                   Cancel
                 </button>
               </div>

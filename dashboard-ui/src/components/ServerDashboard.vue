@@ -5,7 +5,7 @@ import AttendanceSchedulePanel from './AttendanceSchedulePanel.vue';
 import IncidentButtonsPanel from './IncidentButtonsPanel.vue';
 import ResourcePanel from './ResourcePanel.vue';
 import SettingsPanel from './SettingsPanel.vue';
-import type { DashboardBootstrap, FieldConfig, FieldOption } from '../types';
+import type { DashboardBootstrap, FieldConfig } from '../types';
 
 const props = defineProps<{
   bootstrap: DashboardBootstrap;
@@ -22,18 +22,16 @@ const tabs = [
   { id: 'settings', label: 'Settings' },
   { id: 'attendance', label: 'Attendance' },
   { id: 'randomisers', label: 'Randomisers' },
-  { id: 'incident-buttons', label: 'Incident Buttons' },
+  { id: 'incident-buttons', label: 'Incidents' },
   { id: 'access', label: 'Access' },
 ];
 
-const textChannelOptions = computed(() => optionList(props.bootstrap.metadata.textChannels));
 const canEdit = computed(() => props.bootstrap.guild.canEdit);
 const randomiserFields = computed<FieldConfig[]>(() => [
   {
     key: 'channelId',
     label: 'Channel',
-    type: 'select',
-    options: textChannelOptions.value,
+    type: 'channel-select',
     sourceKey: 'channelId',
     required: true,
   },
@@ -50,10 +48,6 @@ const randomiserFields = computed<FieldConfig[]>(() => [
   { key: 'postAt', label: 'Next post', type: 'datetime', required: true },
   { key: 'message', label: 'Message template', type: 'text' },
 ]);
-
-function optionList(items: Array<{ id: string; name: string }>): FieldOption[] {
-  return items.map((item) => ({ value: item.id, label: item.name }));
-}
 </script>
 
 <template>
@@ -101,6 +95,7 @@ function optionList(items: Array<{ id: string; name: string }>): FieldOption[] {
         resource="randomisers"
         :items="bootstrap.randomisers"
         :fields="randomiserFields"
+        :metadata="bootstrap.metadata"
         :columns="[
           { key: 'channelName', label: 'Channel' },
           { key: 'options', label: 'Options' },
