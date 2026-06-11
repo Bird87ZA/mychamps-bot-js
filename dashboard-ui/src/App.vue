@@ -69,8 +69,8 @@ async function refreshAll() {
 
       <ServerList
         v-else-if="!dashboard.selectedGuildId.value || !dashboard.bootstrap.value"
-        :manageable-servers="dashboard.manageableServers.value"
-        :other-servers="dashboard.otherServers.value"
+        :bot-installed-servers="dashboard.botInstalledServers.value"
+        :invite-required-servers="dashboard.inviteRequiredServers.value"
         :loading="dashboard.loading.value"
         @select-server="dashboard.selectServer"
         @refresh="refreshAll"

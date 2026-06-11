@@ -17,13 +17,12 @@ export function useDashboard() {
   const bootstrap = shallowRef<DashboardBootstrap | null>(null);
 
   const authenticated = computed(() => Boolean(user.value));
-  const manageableServers = computed(() =>
-    servers.value.filter((server) => server.canManage || server.canEdit),
+  const botInstalledServers = computed(() =>
+    servers.value.filter((server) => server.installed && (server.canManage || server.canEdit)),
   );
-  const installedManageableServers = computed(() =>
-    manageableServers.value.filter((server) => server.installed),
+  const inviteRequiredServers = computed(() =>
+    servers.value.filter((server) => !server.installed && server.canManage),
   );
-  const otherServers = computed(() => servers.value.filter((server) => !server.canEdit));
   const selectedServer = computed(
     () => servers.value.find((server) => server.id === selectedGuildId.value) ?? null,
   );
@@ -50,8 +49,8 @@ export function useDashboard() {
     const response = await fetchServers();
     servers.value = response.servers;
 
-    if (!selectedGuildId.value && installedManageableServers.value.length > 0) {
-      await selectServer(installedManageableServers.value[0].id);
+    if (!selectedGuildId.value && botInstalledServers.value.length > 0) {
+      await selectServer(botInstalledServers.value[0].id);
       return;
     }
 
@@ -100,8 +99,8 @@ export function useDashboard() {
     user,
     authenticated,
     servers,
-    manageableServers,
-    otherServers,
+    botInstalledServers,
+    inviteRequiredServers,
     selectedGuildId,
     selectedServer,
     bootstrap,
