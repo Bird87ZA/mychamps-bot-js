@@ -242,11 +242,15 @@ a {
   border-radius: 8px;
   display: grid;
   place-items: center;
-  background: linear-gradient(90deg, #4553dd 0%, #171d54 100%);
-  color: #ffffff;
+  background: #e2e8f0;
+  color: #4a5568;
   font-weight: 800;
   flex: 0 0 auto;
   object-fit: cover;
+}
+
+img.server-icon {
+  background: transparent;
 }
 
 .muted {
